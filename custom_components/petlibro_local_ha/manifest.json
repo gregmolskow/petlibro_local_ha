@@ -1,0 +1,25 @@
+{
+    "domain": "petlibro_mqtt_ha",
+    "name": "Petlibro MQTT HA",
+    "version": "0.1.1",
+    "requirements": [
+        "ntplib>=0.4.0",
+        "paho-mqtt",
+        "opensourcesmartdevice @ git+https://github.com/gregmolskow/SmartHomeUtils@v0.2",
+        "toml",
+        "loguru",
+        "homeassistant>=2023.7.3"
+    ],
+    "codeowners": [
+        "gregmolskow"
+    ],
+    "dependencies": [
+        "mqtt"
+    ],
+    "config_flow": true,
+    "documentation": "docs bro",
+    "supported_platforms": [
+        "vacuum"
+    ],
+    "logo": "logo.png"
+}
