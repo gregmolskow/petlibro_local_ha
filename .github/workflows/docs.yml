@@ -1,0 +1,102 @@
+name: Build & Deploy Documentation
+
+on:
+  workflow_call:
+    inputs:
+      dry_run:
+        description: 'Run in dry-run mode (build only, no deploy)'
+        required: false
+        type: boolean
+        default: false
+      should_deploy:
+        description: 'Whether to deploy documentation to GitHub Pages'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-docs:
+    runs-on: ubuntu-latest
+    outputs:
+      sphinx_exists: ${{ steps.check_sphinx.outputs.sphinx_exists }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
+      with:
+        enable-cache: true
+        cache-dependency-glob: "pyproject.toml"
+    
+    - name: Set up Python with uv
+      run: uv python install 3.11
+    
+    - name: Create uv.lock if it doesn't exist
+      run: |
+        if [ ! -f "uv.lock" ]; then
+          echo "⚠️  uv.lock not found, generating it..."
+          uv lock
+        else
+          echo "✅ uv.lock found"
+        fi
+    
+    - name: Sync dependencies with docs extras
+      run: uv sync --extra docs
+    
+    - name: Check Sphinx configuration
+      id: check_sphinx
+      run: |
+        if [ -f "docs/source/conf.py" ]; then
+          echo "sphinx_exists=true" >> $GITHUB_OUTPUT
+          echo "✅ Sphinx configuration found"
+        else
+          echo "sphinx_exists=false" >> $GITHUB_OUTPUT
+          echo "⚠️  Sphinx configuration not found, skipping docs build"
+        fi
+    
+    - name: Build Sphinx documentation
+      if: steps.check_sphinx.outputs.sphinx_exists == 'true'
+      run: |
+        cd docs
+        uv run sphinx-build -W --keep-going -b html source build/html
+        echo "📚 Documentation built successfully"
+    
+    - name: Verify docs build (dry-run mode)
+      if: inputs.dry_run == true && steps.check_sphinx.outputs.sphinx_exists == 'true'
+      run: |
+        echo "✅ Documentation builds successfully (verification only - not deployed)"
+    
+    - name: Upload documentation artifacts
+      if: inputs.should_deploy == true && steps.check_sphinx.outputs.sphinx_exists == 'true'
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: docs/build/html
+  
+  deploy-docs:
+    runs-on: ubuntu-latest
+    needs: build-docs
+    if: inputs.should_deploy == true && needs.build-docs.outputs.sphinx_exists == 'true'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    steps:
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
+    
+    - name: Output documentation URL
+      run: |
+        echo "📖 Documentation deployed to: ${{ steps.deployment.outputs.page_url }}"

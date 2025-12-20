@@ -1,0 +1,150 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+    inputs:
+      skip_release:
+        description: 'Skip release process'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  pull-requests: read
+
+jobs:
+  # Step 0: Extract Python version from pyproject.toml
+  get-python-version:
+    name: Get Python Version
+    runs-on: ubuntu-latest
+    outputs:
+      python-version: ${{ steps.get-version.outputs.python-version }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Extract Python version from pyproject.toml
+      id: get-version
+      run: |
+        # Extract requires-python from pyproject.toml
+        python_version=$(grep -oP 'requires-python\s*=\s*"\K[^"]+' pyproject.toml || echo ">=3.11")
+        # Convert ">=3.11" to "3.11"
+        python_version=$(echo $python_version | sed 's/>=//g' | sed 's/~=//g' | sed 's/^=//g')
+        echo "python-version=$python_version" >> $GITHUB_OUTPUT
+        echo "📌 Using Python version: $python_version"
+  
+  # Step 1: Code quality checks (always runs)
+  lint-and-test:
+    name: Lint & Test
+    needs: get-python-version
+    uses: ./.github/workflows/ruff-lint.yml
+    with:
+      python-version: ${{ needs.get-python-version.outputs.python-version }}
+  
+  # Step 2: Check if we're on main branch
+  check-context:
+    name: Check Context
+    needs: get-python-version
+    runs-on: ubuntu-latest
+    outputs:
+      is_main: ${{ steps.check.outputs.is_main }}
+      should_release: ${{ steps.check.outputs.should_release }}
+      dry_run: ${{ steps.check.outputs.dry_run }}
+    steps:
+    - name: Determine context
+      id: check
+      run: |
+        if [ "${{ github.ref }}" == "refs/heads/main" ] && [ "${{ github.event_name }}" == "push" ]; then
+          echo "is_main=true" >> $GITHUB_OUTPUT
+          echo "should_release=true" >> $GITHUB_OUTPUT
+          echo "dry_run=false" >> $GITHUB_OUTPUT
+          echo "🚀 Running on main branch - will create releases"
+        else
+          echo "is_main=false" >> $GITHUB_OUTPUT
+          echo "should_release=false" >> $GITHUB_OUTPUT
+          echo "dry_run=true" >> $GITHUB_OUTPUT
+          echo "🔍 Running verification - no releases will be created"
+        fi
+  
+  # Step 3: Semantic versioning (uses semantic-version.yml)
+  semantic-version:
+    name: Semantic Version
+    needs: [lint-and-test, check-context]
+    if: (!inputs.skip_release)
+    uses: ./.github/workflows/semantic-version.yml
+    with:
+      dry_run: ${{ needs.check-context.outputs.dry_run == 'true' }}
+    secrets: inherit
+  
+  # Step 4: Build package (uses build-release.yml)
+  build-wheel:
+    name: Build & Release Package
+    needs: [semantic-version, check-context]
+    uses: ./.github/workflows/build-release.yml
+    with:
+      dry_run: ${{ needs.check-context.outputs.dry_run == 'true' }}
+      version: ${{ needs.semantic-version.outputs.version }}
+      should_release: ${{ needs.check-context.outputs.should_release == 'true' && needs.semantic-version.outputs.released == 'true' }}
+    secrets: inherit
+  
+  # Step 5: Build and deploy documentation (uses docs.yml)
+  build-and-deploy-docs:
+    name: Build & Deploy Documentation
+    needs: [semantic-version, check-context]
+    uses: ./.github/workflows/docs.yml
+    with:
+      dry_run: ${{ needs.check-context.outputs.dry_run == 'true' }}
+      should_deploy: ${{ needs.check-context.outputs.should_release == 'true' && needs.semantic-version.outputs.released == 'true' }}
+    secrets: inherit
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+  
+  # Summary job for status checks
+  ci-summary:
+    name: CI Summary
+    needs: [lint-and-test, check-context, semantic-version, build-wheel, build-and-deploy-docs]
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Check CI status
+      run: |
+        echo "📊 CI/CD Pipeline Summary"
+        echo "========================="
+        echo "Context: ${{ needs.check-context.outputs.is_main == 'true' && 'Main Branch (Release Mode)' || 'PR/Branch (Verification Mode)' }}"
+        echo "Lint & Test: ${{ needs.lint-and-test.result }}"
+        echo "Semantic Version: ${{ needs.semantic-version.result }}"
+        echo "Build Wheel: ${{ needs.build-wheel.result }}"
+        echo "Build & Deploy Docs: ${{ needs.build-and-deploy-docs.result }}"
+        echo ""
+        
+        if [ "${{ needs.lint-and-test.result }}" != "success" ]; then
+          echo "❌ CI checks failed"
+          exit 1
+        fi
+        
+        if [ "${{ needs.semantic-version.result }}" == "failure" ]; then
+          echo "❌ Semantic version check failed"
+          exit 1
+        fi
+        
+        if [ "${{ needs.build-wheel.result }}" == "failure" ]; then
+          echo "❌ Package build failed"
+          exit 1
+        fi
+        
+        if [ "${{ needs.build-and-deploy-docs.result }}" == "failure" ]; then
+          echo "❌ Documentation build failed"
+          exit 1
+        fi
+        
+        echo "✅ All pipeline stages completed successfully"

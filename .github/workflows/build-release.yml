@@ -1,0 +1,98 @@
+name: Build & Release Package
+
+on:
+  workflow_call:
+    inputs:
+      dry_run:
+        description: 'Run in dry-run mode (build only, no upload)'
+        required: false
+        type: boolean
+        default: false
+      version:
+        description: 'Version number for the release'
+        required: false
+        type: string
+        default: ''
+      should_release:
+        description: 'Whether to upload artifacts and create release'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-wheel:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
+      with:
+        enable-cache: true
+        cache-dependency-glob: "pyproject.toml"
+    
+    - name: Set up Python with uv
+      run: uv python install 3.11
+    
+    - name: Create uv.lock if it doesn't exist
+      run: |
+        if [ ! -f "uv.lock" ]; then
+          echo "⚠️  uv.lock not found, generating it..."
+          uv lock
+        else
+          echo "✅ uv.lock found"
+        fi
+    
+    - name: Sync dependencies
+      run: uv sync --all-extras
+    
+    - name: Build wheel and sdist
+      run: uv build
+    
+    - name: List built packages
+      run: |
+        echo "📦 Built packages:"
+        ls -lh dist/
+    
+    - name: Verify build success (dry-run mode)
+      if: inputs.dry_run == true
+      run: |
+        echo "✅ Package builds successfully (verification only - not uploaded)"
+    
+    - name: Upload wheel artifacts
+      if: inputs.should_release == true && inputs.version != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: python-packages
+        path: dist/*
+        retention-days: 90
+    
+    - name: Attach packages to GitHub Release
+      if: inputs.should_release == true && inputs.version != ''
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ inputs.version }}
+        files: |
+          dist/*.whl
+          dist/*.tar.gz
+        fail_on_unmatched_files: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Publish to GitHub Packages
+      if: inputs.should_release == true && inputs.version != ''
+      run: |
+        echo "📦 Publishing to GitHub Packages..."
+        REPO_OWNER=$(echo ${{ github.repository }} | cut -d'/' -f1)
+        uv publish \
+          --publish-url https://maven.pkg.github.com/$REPO_OWNER \
+          --username ${{ github.actor }} \
+          --token ${{ secrets.GITHUB_TOKEN }}
+        echo "✅ Successfully published to GitHub Packages"

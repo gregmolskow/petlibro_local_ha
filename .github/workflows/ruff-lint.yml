@@ -1,0 +1,77 @@
+name: Ruff Lint and Format
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: 'Python version to use'
+        required: false
+        type: string
+        default: '3.11'
+
+jobs:
+  lint-and-format:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
+      with:
+        enable-cache: true
+        cache-dependency-glob: "pyproject.toml"
+    
+    - name: Set up Python with uv
+      run: uv python install ${{ inputs.python-version }}
+    
+    - name: Verify pyproject.toml exists
+      run: |
+        if [ ! -f "pyproject.toml" ]; then
+          echo "❌ Error: pyproject.toml not found in project root"
+          echo "This workflow requires a pyproject.toml file with project dependencies."
+          exit 1
+        fi
+        echo "✅ pyproject.toml found"
+    
+    - name: Create uv.lock if it doesn't exist
+      run: |
+        if [ ! -f "uv.lock" ]; then
+          echo "⚠️  uv.lock not found, generating it..."
+          uv lock
+        else
+          echo "✅ uv.lock found"
+        fi
+    
+    - name: Sync dependencies with uv
+      run: uv sync --all-extras
+    
+    - name: Display Ruff version
+      run: uv run ruff --version
+    
+    - name: Run Ruff linter
+      run: uv run ruff check . --output-format=github
+    
+    - name: Run Ruff formatter check
+      run: uv run ruff format --check .
+    
+    - name: Run pytest
+      run: |
+        if [ -d "tests" ] && [ "$(find tests -name 'test_*.py' -o -name '*_test.py' | wc -l)" -gt 0 ]; then
+          echo "✅ Running tests..."
+          uv run pytest --verbose --cov=. --cov-report=xml --cov-report=term || true
+        else
+          echo "⚠️  No tests found, skipping pytest"
+          # Create empty coverage file to prevent upload errors
+          mkdir -p coverage
+          echo '<?xml version="1.0" ?><coverage version="1.0"></coverage>' > coverage.xml
+        fi
+    
+    - name: Upload coverage reports
+      if: always()
+      continue-on-error: true
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false

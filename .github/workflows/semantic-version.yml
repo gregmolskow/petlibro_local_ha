@@ -1,0 +1,74 @@
+name: Semantic Versioning
+
+on:
+  push:
+    branches:
+      - main
+  workflow_call:
+    inputs:
+      dry_run:
+        description: 'Run in dry-run mode (no actual release)'
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      released:
+        description: "Whether a new release was published"
+        value: ${{ jobs.semantic-version.outputs.released }}
+      version:
+        description: "The new release version"
+        value: ${{ jobs.semantic-version.outputs.version }}
+
+permissions:
+  contents: write
+
+jobs:
+  semantic-version:
+    runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.semantic.outputs.new_release_published }}
+      version: ${{ steps.semantic.outputs.new_release_version }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Install semantic-release and plugins
+      run: |
+        npm install --save-dev \
+          semantic-release \
+          @semantic-release/changelog \
+          @semantic-release/git \
+          @semantic-release/github \
+          @semantic-release/exec \
+          @semantic-release/commit-analyzer \
+          @semantic-release/release-notes-generator \
+          conventional-changelog-conventionalcommits
+    
+    - name: Verify installations
+      run: |
+        npx semantic-release --version
+        echo "✅ Semantic release installed successfully"
+    
+    - name: Run semantic-release
+      id: semantic
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        if [ "${{ inputs.dry_run }}" == "true" ]; then
+          echo "Running semantic-release in dry-run mode..."
+          npx semantic-release --dry-run
+          echo "✅ New version tested: ${{ steps.semantic.outputs.new_release_version }}"
+        else
+          echo "Running semantic-release..."
+          npx semantic-release
+          echo "✅ New version released: ${{ steps.semantic.outputs.new_release_version }}"
+        fi
