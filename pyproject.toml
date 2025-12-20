@@ -1,5 +1,5 @@
 [project]
-name = "my-project"
+name = "petlibro_local_ha"
 dynamic = ["version"]
 description = "A Python project with strict linting"
 readme = "README.md"
@@ -32,7 +32,7 @@ path = "VERSION"
 pattern = "(?P<version>.+)"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/my_project"]
+packages = ["src/petlibro_local_ha"]
 
 # Ruff configuration - strict rules
 [tool.ruff]
