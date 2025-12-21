@@ -189,7 +189,6 @@ class PLAF301:
         Returns:
             dict: Current device state
         """
-
         return {
             "state": self.current_state,
             "activity": self.current_state.to_ha_activity(),
