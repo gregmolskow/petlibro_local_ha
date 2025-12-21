@@ -79,9 +79,7 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
         for key in entry.options:
             if key.startswith("feed_"):
                 if "portions" in key:
-                    plans[int(key.split("_")[1])]["portions"] = entry.options[
-                        key
-                    ]
+                    plans[int(key.split("_")[1])]["portions"] = entry.options[key]
                 elif "time" in key:
                     plans[int(key.split("_")[1])]["time"] = entry.options[key]
 
@@ -92,9 +90,7 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
                 grainNum=plans[item]["portions"],
             )
 
-        self._feeder.hass.async_create_task(
-            self.coordinator.async_request_refresh()
-        )
+        self._feeder.hass.async_create_task(self.coordinator.async_request_refresh())
 
     @property
     def device_info(self) -> dict[str, Any]:
