@@ -79,6 +79,8 @@ ignore = [
     "N801",    # Constant name should be uppercase
     "N802",    # Constant name should be uppercase
     "N815",    # Constant name should be uppercase
+    "PLR0904", # Too many branches
+    "RUF029",  # Declared `async`, but doesn't `await` or use `async` features
 ]
 
 [tool.ruff.lint.per-file-ignores]

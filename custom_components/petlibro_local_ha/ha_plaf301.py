@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-class PLAF301:  # noqa: PLR0904
+class PLAF301:
     """MQTT-enabled Petlibro PLAF301 feeder."""
 
     def __init__(
