@@ -1,6 +1,6 @@
 {
-    "domain": "petlibro_mqtt_ha",
-    "name": "Petlibro MQTT HA",
+    "domain": "petlibro_local_ha",
+    "name": "Petlibro Local",
     "version": "0.1.1",
     "requirements": [
         "ntplib>=0.4.0",

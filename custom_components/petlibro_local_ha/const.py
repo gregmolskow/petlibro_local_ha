@@ -6,17 +6,12 @@ This module defines the State enum for the PLAF301 cat feeder and loads the doma
 import enum
 from pathlib import Path
 
-import toml
 from homeassistant.components.vacuum import VacuumActivity
 
 HERE = Path(Path(__file__).resolve()).parent
 
 # Dynamically get the doain infomration from pyproject.toml
-pyproject_path = Path(f"{HERE}/../pyproject.toml")
-with pyproject_path.open("r", encoding="utf-8") as f:
-    pyproject_data = toml.load(f)
-DOMAIN = pyproject_data["project"].get("name")
-# DOMAIN = "petlibro_mqtt_ha"
+DOMAIN = "petlibro_local_ha"
 
 
 class State(enum.Enum):
