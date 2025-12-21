@@ -1,5 +1,8 @@
+"""Data coordinator for Petlibro integration."""
+
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
@@ -8,25 +11,19 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
-from .const import DOMAIN
+from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
     from .ha_plaf301 import PLAF301
-import logging
 
 _LOGGER = logging.getLogger(__name__)
 
-UPDATE_INTERVAL = timedelta(minutes=5)
 
-
-class PetlibroCoordinator(DataUpdateCoordinator[None]):
-    """Coordinator to manage Petlibro vacuum data."""
-
-    feeder: PLAF301 | None = None
-    entity = None
+class PetlibroCoordinator(DataUpdateCoordinator[dict]):
+    """Coordinator to manage Petlibro feeder data updates."""
 
     def __init__(
         self,
@@ -34,23 +31,46 @@ class PetlibroCoordinator(DataUpdateCoordinator[None]):
         config_entry: ConfigEntry,
         feeder: PLAF301,
     ) -> None:
-        """Initialize coordinator."""
+        """Initialize the coordinator.
+
+        Args:
+            hass: Home Assistant instance
+            config_entry: Config entry for this integration
+            feeder: PLAF301 feeder instance
+        """
+        # Get scan interval from options, fallback to default
+        scan_interval = config_entry.options.get(
+            "scan_interval",
+            DEFAULT_SCAN_INTERVAL,
+        )
+
         super().__init__(
             hass,
-            logger=_LOGGER,
+            _LOGGER,
             config_entry=config_entry,
-            update_interval=UPDATE_INTERVAL,
             name=DOMAIN,
+            update_interval=timedelta(minutes=scan_interval),
         )
-        self.feeder = feeder
+
+        self.feeder: PLAF301 = feeder
 
     async def _async_update_data(self) -> dict:
-        """Fetch data from vacuum backend."""
+        """Fetch data from the feeder.
+
+        Returns:
+            dict: Current state data from the feeder
+
+        Raises:
+            UpdateFailed: If unable to fetch data
+        """
         try:
-            # This should return a dict of state values
-            await self.feeder.update_state()
-            # await self.entity.async_write_ha_state()
-            return self.feeder.status
+            # Request state update from device
+            await self.feeder.request_state_update()
+
+            # Return current status
+            return self.feeder.get_state_dict()
+
         except Exception as err:
-            msg = f"Could not update Petlibro vacuum: {err}"
-            raise UpdateFailed(msg)  # noqa: B904
+            _LOGGER.exception("Error updating Petlibro feeder data")
+            msg = f"Error communicating with device: {err}"
+            raise UpdateFailed(msg) from err

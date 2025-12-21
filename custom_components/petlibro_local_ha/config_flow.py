@@ -1,8 +1,9 @@
-"""Configuration flow for the Petlibro MQTT Home Assistant integration.
+"""Configuration flow for Petlibro MQTT Home Assistant integration."""
 
-This module defines the setup and options flow for configuring the integration
-via the Home Assistant UI, including user input validation and entry creation.
-"""
+from __future__ import annotations
+
+import re
+from typing import Any
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
@@ -10,124 +11,220 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 
-from .const import DOMAIN  # DOMAIN = "your_integration_name"
+from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
 
-# Schema for the user-facing setup form
-data_schema = vol.Schema(
-    {
-        vol.Required("petlibro_serial_number"): cv.string,
-        vol.Optional("petlibro_device_name"): cv.string,
-    },
-)
-
-option_schema = vol.Schema(
-    {
-        vol.Optional("scan_interval", default=60): int,
-    },
-)
+# Serial number validation pattern (alphanumeric, typically 12+ characters)
+SERIAL_NUMBER_PATTERN = re.compile(r"^[A-Z0-9]{10,}$", re.IGNORECASE)
 
 
-class PetlibroMqttHaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Manage the configuration flow for the Petlibro MQTT HA integration.
-
-    This class handles user interaction when setting up the integration
-    through the Home Assistant UI. It defines the steps required for the
-    user to configure the integration and creates a config entry.
-
-    :cvar VERSION: The version of the config entry schema.
-    :cvar CONNECTION_CLASS: The type of connection (polling, cloud, etc.).
-    """
+class PetlibroConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for Petlibro MQTT HA integration."""
 
     VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
     async def async_step_user(
         self,
-        user_input: dict | None = None,
+        user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
-        """Handle the initial step of the config flow.
+        """Handle the initial step.
 
-        This method is triggered when the user first adds the integration via the UI.
-        It displays a form asking for the required connection parameters.
+        Args:
+            user_input: User provided configuration
 
-        :param user_input: Optional dictionary of user-submitted input.
-        :type user_input: dict | None
-
-        :return: The result of the flow step. This may be a form or a config entry.
-        :rtype: FlowResult
+        Returns:
+            FlowResult: Either form or create entry
         """
-        if user_input is not None:
-            await self.async_set_unique_id(
-                f"{user_input['petlibro_serial_number']}",
-            )
-            self._abort_if_unique_id_configured()
+        errors: dict[str, str] = {}
 
-            return self.async_create_entry(
-                title="Petlibro MQTT HA",
-                data=user_input,
-            )
+        if user_input is not None:
+            try:
+                # Validate and normalize serial number
+                serial_number = (
+                    user_input["petlibro_serial_number"].strip().upper()
+                )
+
+                if not SERIAL_NUMBER_PATTERN.match(serial_number):
+                    errors["petlibro_serial_number"] = "invalid_serial"
+                else:
+                    # Update with normalized serial number
+                    user_input["petlibro_serial_number"] = serial_number
+
+                    # Set unique ID based on serial number
+                    await self.async_set_unique_id(serial_number)
+                    self._abort_if_unique_id_configured()
+
+                    # Create entry
+                    title = user_input.get(
+                        "petlibro_device_name",
+                        f"Petlibro {serial_number[:6]}",
+                    )
+
+                    return self.async_create_entry(
+                        title=title,
+                        data=user_input,
+                    )
+
+            except Exception:  # pylint: disable=broad-except
+                errors["base"] = "unknown"
+
+        # Build schema
+        data_schema = vol.Schema({
+            vol.Required("petlibro_serial_number"): cv.string,
+            vol.Optional(
+                "petlibro_device_name",
+                default="Petlibro Feeder",
+            ): cv.string,
+        })
 
         return self.async_show_form(
             step_id="user",
             data_schema=data_schema,
+            errors=errors,
         )
 
     @staticmethod
     @callback
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
-    ) -> config_entries.OptionsFlow:
-        """Return the options flow handler for this integration.
+    ) -> PetlibroOptionsFlowHandler:
+        """Get the options flow for this handler.
 
-        This method is called when the user clicks "Configure" on an
-        existing config entry in the UI.
+        Args:
+            config_entry: Config entry instance
 
-        :param config_entry: The existing config entry.
-        :type config_entry: ConfigEntry
-
-        :return: Options flow handler instance.
-        :rtype: OptionsFlow
+        Returns:
+            Options flow handler
         """
-        return PetlibroMQTTHAOptionsFlowHandler(config_entry)
+        return PetlibroOptionsFlowHandler(config_entry)
 
 
-class PetlibroMQTTHAOptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle options for the integration after initial setup.
-
-    This class defines the flow for modifying configuration options
-    of an already-installed integration entry. It allows users to
-    change parameters such as scan intervals or polling behavior.
-
-    :param config_entry: The existing config entry.
-    :type config_entry: ConfigEntry
-    """
+class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
+    """Handle options for the Petlibro integration."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize the options flow handler.
+        """Initialize options flow.
 
-        :param config_entry: The config entry for which this options flow is being executed.
-        :type config_entry: ConfigEntry
+        Args:
+            config_entry: Config entry instance
         """
-        self.config_entry = config_entry
 
     async def async_step_init(
         self,
-        user_input: dict | None = None,
+        user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
-        """Manage the initial step in the options flow.
+        """Manage the options.
 
-        This is the entry point when the user selects "Configure" on the integration.
+        Args:
+            user_input: User provided options
 
-        :param user_input: Optional dictionary of option values submitted by the user.
-        :type user_input: dict | None
-
-        :return: A result object indicating either form display or entry creation.
-        :rtype: FlowResult
+        Returns:
+            FlowResult: Either form or create entry
         """
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            return self.async_create_entry(
+                title="",
+                data=user_input,
+            )
+
+        # Build options schema with current values
+        current_scan_interval = self.config_entry.options.get(
+            "scan_interval",
+            DEFAULT_SCAN_INTERVAL,
+        )
+
+        feed_1_time = self.config_entry.options.get(
+            "feed_1_time",
+            None,
+        )
+        feed_1_portions = self.config_entry.options.get(
+            "feed_1_portions",
+            None,
+        )
+
+        feed_2_time = self.config_entry.options.get(
+            "feed_2_time",
+            None,
+        )
+        feed_2_portions = self.config_entry.options.get(
+            "feed_2_portions",
+            None,
+        )
+
+        feed_3_time = self.config_entry.options.get(
+            "feed_3_time",
+            None,
+        )
+        feed_3_portions = self.config_entry.options.get(
+            "feed_3_portions",
+            None,
+        )
+
+        feed_4_time = self.config_entry.options.get(
+            "feed_4_time",
+            None,
+        )
+        feed_4_portions = self.config_entry.options.get(
+            "feed_4_portions",
+            None,
+        )
+
+        feed_5_time = self.config_entry.options.get(
+            "feed_5_time",
+            None,
+        )
+        feed_5_portions = self.config_entry.options.get(
+            "feed_5_portions",
+            None,
+        )
+
+        options_schema = vol.Schema({
+            vol.Optional(
+                "scan_interval",
+                default=current_scan_interval,
+            ): int,
+            vol.Required(
+                "feed_1_time",
+                default=feed_1_time,
+            ): int,
+            vol.Required(
+                "feed_1_portions",
+                default=feed_1_portions,
+            ): int,
+            vol.Optional(
+                "feed_2_time",
+                default=feed_2_time,
+            ): int,
+            vol.Optional(
+                "feed_2_portions",
+                default=feed_2_portions,
+            ): int,
+            vol.Optional(
+                "feed_3_time",
+                default=feed_3_time,
+            ): int,
+            vol.Optional(
+                "feed_3_portions",
+                default=feed_3_portions,
+            ): int,
+            vol.Optional(
+                "feed_4_time",
+                default=feed_4_time,
+            ): int,
+            vol.Optional(
+                "feed_4_portions",
+                default=feed_4_portions,
+            ): int,
+            vol.Optional(
+                "feed_5_time",
+                default=feed_5_time,
+            ): int,
+            vol.Optional(
+                "feed_5_portions",
+                default=feed_5_portions,
+            ): int,
+        })
 
         return self.async_show_form(
             step_id="init",
-            data_schema=option_schema,
+            data_schema=options_schema,
         )

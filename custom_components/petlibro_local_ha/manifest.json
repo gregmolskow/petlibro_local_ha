@@ -1,25 +1,19 @@
 {
     "domain": "petlibro_local_ha",
     "name": "Petlibro Local",
-    "version": "0.1.1",
+    "version": "0.2.0",
+    "documentation": "https://github.com/gregmolskow/petlibro_local_ha",
+    "issue_tracker": "https://github.com/gregmolskow/petlibro_local_ha/issues",
     "requirements": [
-        "ntplib>=0.4.0",
-        "paho-mqtt",
-        "opensourcesmartdevice @ git+https://github.com/gregmolskow/SmartHomeUtils@v0.2",
-        "toml",
-        "loguru",
-        "homeassistant>=2023.7.3"
-    ],
-    "codeowners": [
-        "gregmolskow"
+        "paho-mqtt>=1.6.1"
     ],
     "dependencies": [
         "mqtt"
     ],
-    "config_flow": true,
-    "documentation": "docs bro",
-    "supported_platforms": [
-        "vacuum"
+    "codeowners": [
+        "@gregmolskow"
     ],
-    "logo": "logo.png"
+    "config_flow": true,
+    "iot_class": "local_push",
+    "integration_type": "device"
 }

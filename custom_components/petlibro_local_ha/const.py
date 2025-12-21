@@ -1,41 +1,54 @@
-"""Constants and enums for the Petlibro MQTT Home Assistant integration.
+"""Constants for the Petlibro MQTT Home Assistant integration."""
 
-This module defines the State enum for the PLAF301 cat feeder and loads the domain name from pyproject.toml.
-"""
+from __future__ import annotations
 
-import enum
-from pathlib import Path
+from enum import Enum
 
 from homeassistant.components.vacuum import VacuumActivity
 
-HERE = Path(Path(__file__).resolve()).parent
-
-# Dynamically get the doain infomration from pyproject.toml
 DOMAIN = "petlibro_local_ha"
 
+# Default update interval (minutes)
+DEFAULT_SCAN_INTERVAL = 5
 
-class State(enum.Enum):
+# MQTT topics
+TOPIC_DEVICE_EVENT = "dl/{model}/{sn}/device/event/post"
+TOPIC_DEVICE_CONTROL = "dl/{model}/{sn}/device/service/sub"
+TOPIC_DEVICE_CONTROL_IN = "dl/{model}/{sn}/device/service/post"
+TOPIC_DEVICE_HEARTBEAT = "dl/{model}/{sn}/device/heart/post"
+
+# Device model
+MODEL_PLAF301 = "PLAF301"
+MANUFACTURER = "Petlibro"
+
+
+class FeederState(Enum):
     """Enum for the different states of the PLAF301 cat feeder."""
 
-    DISPENSING = 0  # cleaning
-    ERROR = 1  # error
-    DOOR_OPEN = 3  # docked
-    DOOR_CLOSED = 2  # idle
+    DISPENSING = 0
+    ERROR = 1
+    DOOR_CLOSED = 2
+    DOOR_OPEN = 3
     UNKNOWN = 4
 
-    def toHA(self) -> str:
-        """Convert the state value to a Home Assistant compatible JSON string.
-        :return: String representation of the state.
-        :rtype: str
-        """
-        out = VacuumActivity.ERROR
-        if self.value == 0:
-            out = VacuumActivity.CLEANING
-        elif self.value == 1 | 4:
-            out = VacuumActivity.ERROR
-        elif self.value == 2:  # noqa: PLR2004
-            out = VacuumActivity.IDLE
-        elif self.value == 3:  # noqa: PLR2004
-            out = VacuumActivity.DOCKED
+    def to_ha_activity(self) -> VacuumActivity:
+        """Convert feeder state to Home Assistant VacuumActivity.
 
-        return out
+        Returns:
+            VacuumActivity: Corresponding HA vacuum activity state
+        """
+        state_mapping = {
+            FeederState.DISPENSING: VacuumActivity.CLEANING,
+            FeederState.ERROR: VacuumActivity.ERROR,
+            FeederState.DOOR_CLOSED: VacuumActivity.IDLE,
+            FeederState.DOOR_OPEN: VacuumActivity.DOCKED,
+            FeederState.UNKNOWN: VacuumActivity.ERROR,
+        }
+        return state_mapping.get(self, VacuumActivity.ERROR)
+
+
+# Error codes
+ERROR_EMPTY = "empty"
+ERROR_CLOGGED = "clogged"
+ERROR_UNKNOWN = "unknown"
+ERROR_NONE = "none"
