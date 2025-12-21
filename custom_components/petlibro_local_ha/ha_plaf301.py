@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import TYPE_CHECKING, Any
@@ -69,10 +70,21 @@ class PLAF301:
         self._schedule = FEEDING_PLAN_SERVICE()
 
         self._is_dispensing = False
-        self._last_heartbeat: float | None = None
+        self._last_heartbeat: float = 0
 
         # MQTT unsubscribe functions
         self._unsub_funcs: list = []
+
+        # Callback for state changes
+        self._state_change_callback: callable | None = None
+
+    def set_state_change_callback(self, callback: callable) -> None:
+        """Set callback to be called when state changes.
+
+        Args:
+            callback: Function to call on state change
+        """
+        self._state_change_callback = callback
 
     @property
     def serial_number(self) -> str:
@@ -123,7 +135,7 @@ class PLAF301:
     @property
     def is_door_open(self) -> bool:
         """Check if the barn door is open."""
-        return not self._current_state.barnDoorState
+        return self._current_state.barnDoorState or False
 
     @property
     def is_clogged(self) -> bool:
@@ -177,6 +189,7 @@ class PLAF301:
         Returns:
             dict: Current device state
         """
+
         return {
             "state": self.current_state,
             "activity": self.current_state.to_ha_activity(),
@@ -186,7 +199,7 @@ class PLAF301:
             "is_clogged": self.is_clogged,
             "battery_level": self.battery_level,
             "error_code": self.error_code,
-            "last_heartbeat": self._last_heartbeat,
+            "rssi": self._heartbeat.rssi,
         }
 
     def add_feeding_plan(
@@ -264,13 +277,17 @@ class PLAF301:
             payload: dict = json.loads(msg.payload)
             cmd = payload.get("cmd")
 
+            update: bool = True
+
             if cmd == "ATTR_PUSH_EVENT":
                 self._current_state.from_mqtt_payload(payload)
                 _LOGGER.debug("Updated device attributes")
 
             elif cmd == "DEVICE_START_EVENT":
                 self._startup_info.from_mqtt_payload(payload)
-                _LOGGER.info("Device started: %s", self._startup_info.softwareVersion)
+                _LOGGER.info(
+                    "Device started: %s", self._startup_info.softwareVersion
+                )
 
             elif cmd == "WAREHOUSE_DOOR_EVENT":
                 door_state = payload.get("barnDoorState", False)
@@ -283,7 +300,13 @@ class PLAF301:
                 _LOGGER.debug("Dispensing: %s", self._is_dispensing)
 
             else:
-                _LOGGER.debug("Unknown event command: %s", cmd)
+                _LOGGER.warning("Unknown event command: %s", cmd)
+                update = False
+
+            # Notify callback of state change
+            if self._state_change_callback and update:
+                _LOGGER.debug("Updating values from state change")
+                self.hass.async_create_task(self._state_change_callback())
 
         except Exception as err:
             _LOGGER.exception("Error handling event message: %s", err)
@@ -351,8 +374,12 @@ class PLAF301:
 
     async def request_state_update(self) -> None:
         """Request current state from the device."""
-        _LOGGER.debug("Requesting state update")
+        _LOGGER.warning("Requesting state update")
+        tmp = self._heartbeat.ts
         await self._publish_command(NTP())
+        while self._heartbeat.ts == tmp:
+            await asyncio.sleep(0.1)
+        _LOGGER.warning("State update done")
 
     async def open_door(self) -> None:
         """Open the barn door."""

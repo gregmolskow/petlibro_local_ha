@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import Enum
 
 from homeassistant.components.vacuum import VacuumActivity
@@ -20,6 +21,12 @@ TOPIC_DEVICE_HEARTBEAT = "dl/{model}/{sn}/device/heart/post"
 # Device model
 MODEL_PLAF301 = "PLAF301"
 MANUFACTURER = "Petlibro"
+
+# Get local timezone
+TZ = datetime.now().astimezone().tzinfo
+
+# Get timezone offset in hours
+TZ_OFFSET = datetime.now().astimezone().utcoffset().total_seconds() / 3600
 
 
 class FeederState(Enum):
