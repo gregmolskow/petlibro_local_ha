@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  homeassistant:
+    build: .
+    container_name: homeassistant-dev
+    restart: unless-stopped
+    privileged: true
+    network_mode: bridge
+    volumes:
+      # Mount your custom component directory
+      - ../custom_components:/config/custom_components
+      # Persist Home Assistant configuration
+      - ../test_config:/config
+      # Mount the host's timezone (optional)
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TZ=America/New_York
+    ports:
+      - "8123:8123"
+    # Uncomment if you need hardware access (e.g., USB devices)
+    # devices:
+    #   - /dev/ttyUSB0:/dev/ttyUSB0

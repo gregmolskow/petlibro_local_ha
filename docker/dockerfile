@@ -1,0 +1,16 @@
+FROM homeassistant/home-assistant:latest
+
+# Install any additional dependencies if needed
+# RUN apk add --no-cache <package-name>
+
+# Copy custom component
+COPY ../custom_components/ /config/custom_components/
+
+# Set working directory
+WORKDIR /config
+
+# Expose Home Assistant port
+EXPOSE 8123
+
+# Start Home Assistant
+CMD ["python", "-m", "homeassistant", "--config", "/config"]

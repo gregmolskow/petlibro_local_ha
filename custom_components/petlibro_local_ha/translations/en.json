@@ -1,0 +1,39 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "data": {
+                    "petlibro_serial_number": "Petlibro Serial Number",
+                    "petlibro_device_name": "Device Name (Optional)"
+                }
+            }
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Configuration Options",
+                "data": {
+                    "scan_interval": "The number of minutes between each device scan.",
+                    "feed_1_time": "The feeding time for meal 1 (24 hr).",
+                    "feed_2_time": "The feeding time for meal 2 (24 hr).",
+                    "feed_3_time": "The feeding time for meal 3 (24 hr).",
+                    "feed_4_time": "The feeding time for meal 4 (24 hr).",
+                    "feed_5_time": "The feeding time for meal 5 (24 hr).",
+                    "feed_1_portions": "The feeding portion for meal 1.",
+                    "feed_2_portions": "The feeding portion for meal 2.",
+                    "feed_3_portions": "The feeding portion for meal 3.",
+                    "feed_4_portions": "The feeding portion for meal 4.",
+                    "feed_5_portions": "The feeding portion for meal 5."
+                },
+                "description": "The options for the Petlibro MQTT HA device."
+            }
+        },
+        "error": {
+            "invalid_auth": "Invalid authentication"
+        },
+        "abort": {
+            "already_configured": "Device is already configured"
+        }
+    }
+}

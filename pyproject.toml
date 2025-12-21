@@ -5,8 +5,13 @@ description = "A Python project with strict linting"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "homeassistant>=2024.3.3",
+    "paho-mqtt>=2.1.0",
+    "pytest>=9.0.2",
     "requests>=2.31.0",
     # Add your project dependencies here
+    "ruff>=0.14.10",
+    "toml>=0.10.2",
 ]
 
 [project.optional-dependencies]
@@ -32,55 +37,55 @@ path = "VERSION"
 pattern = "(?P<version>.+)"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/petlibro_local_ha"]
+packages = ["custom_components/petlibro_local_ha"]
 
 # Ruff configuration - strict rules
 [tool.ruff]
 line-length = 88
 target-version = "py311"
 src = ["src", "tests"]
-exclude = [
-    ".git",
-    ".venv",
-    "__pycache__",
-    "build",
-    "dist",
-]
+exclude = [".git", ".venv", "__pycache__", "build", "dist"]
 
 [tool.ruff.lint]
 # Enable strict rule sets
 select = [
-    "E",      # pycodestyle errors
-    "W",      # pycodestyle warnings
-    "F",      # pyflakes
-    "I",      # isort
-    "N",      # pep8-naming
-    "UP",     # pyupgrade
-    "B",      # flake8-bugbear
-    "C4",     # flake8-comprehensions
-    "DTZ",    # flake8-datetimez
-    "T10",    # flake8-debugger
-    "EM",     # flake8-errmsg
-    "ISC",    # flake8-implicit-str-concat
-    "ICN",    # flake8-import-conventions
-    "PIE",    # flake8-pie
-    "PT",     # flake8-pytest-style
-    "Q",      # flake8-quotes
-    "RSE",    # flake8-raise
-    "RET",    # flake8-return
-    "SIM",    # flake8-simplify
-    "PTH",    # flake8-use-pathlib
-    "PL",     # pylint
-    "RUF",    # ruff-specific rules
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "DTZ", # flake8-datetimez
+    "T10", # flake8-debugger
+    "EM",  # flake8-errmsg
+    "ISC", # flake8-implicit-str-concat
+    "ICN", # flake8-import-conventions
+    "PIE", # flake8-pie
+    "PT",  # flake8-pytest-style
+    "Q",   # flake8-quotes
+    "RSE", # flake8-raise
+    "RET", # flake8-return
+    "SIM", # flake8-simplify
+    "PTH", # flake8-use-pathlib
+    "PL",  # pylint
+    "RUF", # ruff-specific rules
 ]
 ignore = [
-    "E501",   # Line too long (handled by formatter)
+    "E501",    # Line too long (handled by formatter)
     "PLR0913", # Too many arguments
+    "N803",    # Name should be lowercase
+    "N801",    # Constant name should be uppercase
+    "N802",    # Constant name should be uppercase
+    "N815",    # Constant name should be uppercase
+    "PLR0904", # Too many branches
+    "RUF029",  # Declared `async`, but doesn't `await` or use `async` features
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = [
-    "S101",   # Allow assert in tests
+    "S101",    # Allow assert in tests
     "PLR2004", # Allow magic values in tests
 ]
 
@@ -120,11 +125,7 @@ markers = [
 
 [tool.coverage.run]
 source = ["src"]
-omit = [
-    "*/tests/*",
-    "*/__pycache__/*",
-    "*/site-packages/*",
-]
+omit = ["*/tests/*", "*/__pycache__/*", "*/site-packages/*"]
 
 [tool.coverage.report]
 exclude_lines = [
