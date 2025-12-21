@@ -54,6 +54,21 @@ class PetlibroCoordinator(DataUpdateCoordinator[dict]):
 
         self.feeder: PLAF301 = feeder
 
+        # Register callback for immediate updates
+        self.feeder.set_state_change_callback(self._on_state_change)
+
+        self._state_change: bool = False
+
+    async def _on_state_change(self) -> None:
+        """Handle state change from feeder.
+
+        This is called when MQTT messages arrive with state updates.
+        """
+        _LOGGER.debug("State change detected, refreshing coordinator")
+        self._state_change = True
+        # Update coordinator data immediately without waiting for interval
+        await self.async_request_refresh()
+
     async def _async_update_data(self) -> dict:
         """Fetch data from the feeder.
 
@@ -64,8 +79,13 @@ class PetlibroCoordinator(DataUpdateCoordinator[dict]):
             UpdateFailed: If unable to fetch data
         """
         try:
-            # Request state update from device
-            await self.feeder.request_state_update()
+            _LOGGER.info("State Chanege %s", self._state_change)
+            if not self._state_change:
+                # Request state update from device
+                _LOGGER.debug("Petlibro coordinator requesting state update")
+                await self.feeder.request_state_update()
+            else:
+                self._state_change = False
 
             # Return current status
             return self.feeder.get_state_dict()

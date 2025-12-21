@@ -11,6 +11,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from .const import TZ_OFFSET
+
 
 @dataclass
 class MQTTMessage:
@@ -159,9 +161,7 @@ class NTP_SYNC(PetlibroMessage):
         self.ts = now.timestamp() * 1000
 
         # Get local timezone offset
-        local_now = datetime.datetime.now().astimezone()
-        offset = local_now.utcoffset()
-        self.timezone = int(offset.total_seconds() / 3600) if offset else 0
+        self.timezone = TZ_OFFSET
 
     timezone: int = 0
 

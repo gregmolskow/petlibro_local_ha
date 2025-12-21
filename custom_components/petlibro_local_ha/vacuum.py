@@ -11,7 +11,7 @@ from homeassistant.components.vacuum import (
 )
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, TZ, datetime
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -69,7 +69,7 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{entry.data['petlibro_serial_number']}_vacuum"
-        self._attr_name = entry.data.get("petlibro_device_name", "Petlibro Feeder")
+        self._attr_name = "Feeder"
 
         self.coordinator: PetlibroCoordinator = coordinator
         self._feeder = coordinator.feeder
@@ -89,6 +89,8 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
                 executionTime=plans[item]["time"],
                 grainNum=plans[item]["portions"],
             )
+
+        self._feeder.hass.async_create_task(self.coordinator.async_request_refresh())
 
     @property
     def device_info(self) -> dict[str, Any]:
@@ -113,25 +115,23 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
         return None
 
     @property
-    def battery_level(self) -> int | None:
-        """Return the battery level of the vacuum."""
-        if self.coordinator.data:
-            return self.coordinator.data.get("battery_level")
-        return None
-
-    @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return extra state attributes."""
         if not self.coordinator.data:
             return {}
 
+        ts = datetime.fromtimestamp(datetime.now(TZ).timestamp()).strftime(
+            "%d/%m/%Y %H:%M:%S"
+        )
         return {
-            "is_door_open": self.coordinator.data.get("is_door_open", False),
-            "is_dispensing": self.coordinator.data.get("is_dispensing", False),
-            "is_empty": self.coordinator.data.get("is_empty", False),
-            "is_clogged": self.coordinator.data.get("is_clogged", False),
-            "error_code": self.coordinator.data.get("error_code", "none"),
-            "last_heartbeat": self.coordinator.data.get("last_heartbeat"),
+            "door_open": self.coordinator.data.get("is_door_open", False),
+            "dispensing": self.coordinator.data.get("is_dispensing", False),
+            "empty": self.coordinator.data.get("is_empty", False),
+            "clogged": self.coordinator.data.get("is_clogged", False),
+            "error": self.coordinator.data.get("error_code", "none"),
+            "Last Update": ts,
+            "Battery": self.coordinator.data.get("battery_level"),
+            "RSSI": self.coordinator.data.get("rssi"),
         }
 
     async def async_start(self) -> None:
