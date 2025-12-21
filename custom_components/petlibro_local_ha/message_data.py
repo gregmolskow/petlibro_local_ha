@@ -254,9 +254,7 @@ class FEEDING_PLAN_SERVICE(PetlibroMessage):
         msg = f"Plan with ID {plan.planId} not found"
         raise IndexError(msg)
 
-    def from_mqtt_payload(
-        self, payload: dict[str, Any]
-    ) -> FEEDING_PLAN_SERVICE:
+    def from_mqtt_payload(self, payload: dict[str, Any]) -> FEEDING_PLAN_SERVICE:
         """Deserialize feeding plan service from payload.
 
         Args:

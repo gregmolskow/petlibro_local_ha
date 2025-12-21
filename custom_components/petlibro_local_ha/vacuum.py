@@ -69,9 +69,7 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{entry.data['petlibro_serial_number']}_vacuum"
-        self._attr_name = entry.data.get(
-            "petlibro_device_name", "Petlibro Feeder"
-        )
+        self._attr_name = entry.data.get("petlibro_device_name", "Petlibro Feeder")
 
         self.coordinator: PetlibroCoordinator = coordinator
         self._feeder = coordinator.feeder
@@ -81,9 +79,7 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
         for key in entry.options:
             if key.startswith("feed_"):
                 if "portions" in key:
-                    plans[int(key.split("_")[1])]["portions"] = entry.options[
-                        key
-                    ]
+                    plans[int(key.split("_")[1])]["portions"] = entry.options[key]
                 elif "time" in key:
                     plans[int(key.split("_")[1])]["time"] = entry.options[key]
 

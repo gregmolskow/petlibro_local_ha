@@ -39,9 +39,7 @@ class PetlibroConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             try:
                 # Validate and normalize serial number
-                serial_number = (
-                    user_input["petlibro_serial_number"].strip().upper()
-                )
+                serial_number = user_input["petlibro_serial_number"].strip().upper()
 
                 if not SERIAL_NUMBER_PATTERN.match(serial_number):
                     errors["petlibro_serial_number"] = "invalid_serial"
@@ -68,13 +66,15 @@ class PetlibroConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "unknown"
 
         # Build schema
-        data_schema = vol.Schema({
-            vol.Required("petlibro_serial_number"): cv.string,
-            vol.Optional(
-                "petlibro_device_name",
-                default="Petlibro Feeder",
-            ): cv.string,
-        })
+        data_schema = vol.Schema(
+            {
+                vol.Required("petlibro_serial_number"): cv.string,
+                vol.Optional(
+                    "petlibro_device_name",
+                    default="Petlibro Feeder",
+                ): cv.string,
+            }
+        )
 
         return self.async_show_form(
             step_id="user",
@@ -177,52 +177,54 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
             None,
         )
 
-        options_schema = vol.Schema({
-            vol.Optional(
-                "scan_interval",
-                default=current_scan_interval,
-            ): int,
-            vol.Required(
-                "feed_1_time",
-                default=feed_1_time,
-            ): int,
-            vol.Required(
-                "feed_1_portions",
-                default=feed_1_portions,
-            ): int,
-            vol.Optional(
-                "feed_2_time",
-                default=feed_2_time,
-            ): int,
-            vol.Optional(
-                "feed_2_portions",
-                default=feed_2_portions,
-            ): int,
-            vol.Optional(
-                "feed_3_time",
-                default=feed_3_time,
-            ): int,
-            vol.Optional(
-                "feed_3_portions",
-                default=feed_3_portions,
-            ): int,
-            vol.Optional(
-                "feed_4_time",
-                default=feed_4_time,
-            ): int,
-            vol.Optional(
-                "feed_4_portions",
-                default=feed_4_portions,
-            ): int,
-            vol.Optional(
-                "feed_5_time",
-                default=feed_5_time,
-            ): int,
-            vol.Optional(
-                "feed_5_portions",
-                default=feed_5_portions,
-            ): int,
-        })
+        options_schema = vol.Schema(
+            {
+                vol.Optional(
+                    "scan_interval",
+                    default=current_scan_interval,
+                ): int,
+                vol.Required(
+                    "feed_1_time",
+                    default=feed_1_time,
+                ): int,
+                vol.Required(
+                    "feed_1_portions",
+                    default=feed_1_portions,
+                ): int,
+                vol.Optional(
+                    "feed_2_time",
+                    default=feed_2_time,
+                ): int,
+                vol.Optional(
+                    "feed_2_portions",
+                    default=feed_2_portions,
+                ): int,
+                vol.Optional(
+                    "feed_3_time",
+                    default=feed_3_time,
+                ): int,
+                vol.Optional(
+                    "feed_3_portions",
+                    default=feed_3_portions,
+                ): int,
+                vol.Optional(
+                    "feed_4_time",
+                    default=feed_4_time,
+                ): int,
+                vol.Optional(
+                    "feed_4_portions",
+                    default=feed_4_portions,
+                ): int,
+                vol.Optional(
+                    "feed_5_time",
+                    default=feed_5_time,
+                ): int,
+                vol.Optional(
+                    "feed_5_portions",
+                    default=feed_5_portions,
+                ): int,
+            }
+        )
 
         return self.async_show_form(
             step_id="init",

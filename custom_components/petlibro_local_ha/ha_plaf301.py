@@ -270,9 +270,7 @@ class PLAF301:
 
             elif cmd == "DEVICE_START_EVENT":
                 self._startup_info.from_mqtt_payload(payload)
-                _LOGGER.info(
-                    "Device started: %s", self._startup_info.softwareVersion
-                )
+                _LOGGER.info("Device started: %s", self._startup_info.softwareVersion)
 
             elif cmd == "WAREHOUSE_DOOR_EVENT":
                 door_state = payload.get("barnDoorState", False)
