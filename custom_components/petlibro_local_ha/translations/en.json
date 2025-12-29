@@ -12,28 +12,81 @@
     "options": {
         "step": {
             "init": {
-                "title": "Configuration Options",
+                "title": "Petlibro Options",
+                "menu_options": {
+                    "manage_schedules": "Manage Feeding Schedules",
+                    "other_settings": "Other Settings"
+                }
+            },
+            "manage_schedules": {
+                "title": "Manage Feeding Schedules",
+                "menu_options": {
+                    "add_schedule": "Add New Schedule",
+                    "view_schedules": "View Schedules",
+                    "delete_schedule": "Delete Schedule",
+                    "done": "Submit"
+                }
+            },
+            "add_schedule": {
+                "title": "Add Feeding Schedule",
+                "description": "Create a new feeding schedule. {info}",
                 "data": {
-                    "scan_interval": "The number of minutes between each device scan.",
-                    "feed_1_time": "The feeding time for meal 1 (24 hr).",
-                    "feed_2_time": "The feeding time for meal 2 (24 hr).",
-                    "feed_3_time": "The feeding time for meal 3 (24 hr).",
-                    "feed_4_time": "The feeding time for meal 4 (24 hr).",
-                    "feed_5_time": "The feeding time for meal 5 (24 hr).",
-                    "feed_1_portions": "The feeding portion for meal 1.",
-                    "feed_2_portions": "The feeding portion for meal 2.",
-                    "feed_3_portions": "The feeding portion for meal 3.",
-                    "feed_4_portions": "The feeding portion for meal 4.",
-                    "feed_5_portions": "The feeding portion for meal 5."
+                    "time": "Feeding Time",
+                    "days": "Days of Week",
+                    "portions": "Number of Portions"
                 },
-                "description": "The options for the Petlibro MQTT HA device."
+                "data_description": {
+                    "time": "What time should the feeder dispense food?",
+                    "days": "Select which days this schedule should run (leave empty for every day)",
+                    "portions": "How many portions should be dispensed?"
+                }
+            },
+            "view_schedules": {
+                "title": "Current Feeding Schedules",
+                "description": "{schedules}"
+            },
+            "delete_schedule": {
+                "title": "Delete Feeding Schedule",
+                "description": "Select a schedule to delete",
+                "data": {
+                    "schedule_to_delete": "Schedule to Delete"
+                }
+            },
+            "done": {
+                "title": "Schedules Saved",
+                "description": "Your feeding schedules have been saved."
+            },
+            "edit_schedule": {
+                "title": "Edit Feeding Schedule",
+                "description": "Select a schedule to edit",
+                "data": {
+                    "schedule_to_edit": "Schedule to Edit"
+                }
+            },
+            "edit_schedule_form": {
+                "title": "Edit Schedule #{schedule_number}",
+                "description": "Update the feeding schedule. {info}",
+                "data": {
+                    "time": "Feeding Time",
+                    "days": "Days of Week",
+                    "portions": "Number of Portions"
+                },
+                "data_description": {
+                    "time": "What time should the feeder dispense food?",
+                    "days": "Select which days this schedule should run (leave empty for every day)",
+                    "portions": "How many portions should be dispensed?"
+                }
+            },
+            "other_settings": {
+                "title": "Other Settings",
+                "description": "Configure additional settings",
+                "data": {
+                    "scan_interval": "Scan Interval (seconds)"
+                },
+                "data_description": {
+                    "scan_interval": "How often to check the feeder status"
+                }
             }
-        },
-        "error": {
-            "invalid_auth": "Invalid authentication"
-        },
-        "abort": {
-            "already_configured": "Device is already configured"
         }
     }
 }

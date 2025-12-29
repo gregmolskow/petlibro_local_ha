@@ -205,6 +205,7 @@ class FEEDING_PLAN_SERVICE(PetlibroMessage):
     """Feeding plan service message."""
 
     plans: list[FoodPlan] = field(default_factory=list)
+    ts: int = -1
 
     def add_plan(self, plan: FoodPlan) -> None:
         """Add a feeding plan.
@@ -254,7 +255,9 @@ class FEEDING_PLAN_SERVICE(PetlibroMessage):
         msg = f"Plan with ID {plan.planId} not found"
         raise IndexError(msg)
 
-    def from_mqtt_payload(self, payload: dict[str, Any]) -> FEEDING_PLAN_SERVICE:
+    def from_mqtt_payload(
+        self, payload: dict[str, Any]
+    ) -> FEEDING_PLAN_SERVICE:
         """Deserialize feeding plan service from payload.
 
         Args:
@@ -276,6 +279,8 @@ class FEEDING_PLAN_SERVICE(PetlibroMessage):
         for key, value in payload.items():
             if key != "plans" and hasattr(self, key):
                 setattr(self, key, value)
+
+        self.ts = payload.get("ts", -1)
 
         return self
 

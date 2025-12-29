@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from enum import Enum
 
@@ -17,6 +18,8 @@ TOPIC_DEVICE_EVENT = "dl/{model}/{sn}/device/event/post"
 TOPIC_DEVICE_CONTROL = "dl/{model}/{sn}/device/service/sub"
 TOPIC_DEVICE_CONTROL_IN = "dl/{model}/{sn}/device/service/post"
 TOPIC_DEVICE_HEARTBEAT = "dl/{model}/{sn}/device/heart/post"
+
+_LOGGER = logging.getLogger(__name__)
 
 # Device model
 MODEL_PLAF301 = "PLAF301"

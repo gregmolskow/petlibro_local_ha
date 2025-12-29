@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from homeassistant.const import Platform
 from homeassistant.exceptions import ConfigEntryNotReady
 
+from .const import _LOGGER
 from .const import DOMAIN as DOMAIN
 from .coordinator import PetlibroCoordinator
 from .ha_plaf301 import PLAF301
@@ -20,7 +21,6 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
-_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.VACUUM]
 
@@ -50,14 +50,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Create feeder instance
         feeder = PLAF301(hass, sn, name)
 
+        # Start MQTT subscriptions and get device info
+        await feeder.start()
+
         # Create coordinator
-        coordinator = PetlibroCoordinator(hass, entry, feeder)
+        coordinator: PetlibroCoordinator = PetlibroCoordinator(
+            hass, entry, feeder
+        )
 
         # Store coordinator in runtime data
-        entry.runtime_data = coordinator
-
-        # Start MQTT subscriptions
-        await feeder.start()
+        entry.runtime_data: PetlibroCoordinator = coordinator  # type: ignore
 
         # Perform initial data fetch
         await coordinator.async_config_entry_first_refresh()
@@ -83,7 +85,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     Returns:
         True if unload was successful
     """
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unload_ok = await hass.config_entries.async_unload_platforms(
+        entry, PLATFORMS
+    )
 
     if unload_ok:
         coordinator: PetlibroCoordinator = entry.runtime_data

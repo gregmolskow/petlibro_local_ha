@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.vacuum import (
     StateVacuumEntity,
     VacuumEntityFeature,
 )
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, TZ, datetime
+from .const import _LOGGER, DOMAIN, TZ, datetime
+from .message_data import FEEDING_PLAN_SERVICE, FoodPlan
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -19,8 +20,6 @@ if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
     from .coordinator import PetlibroCoordinator
-
-_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -36,6 +35,38 @@ async def async_setup_entry(
         async_add_entities: Callback to add entities
     """
     coordinator: PetlibroCoordinator = entry.runtime_data
+    feeding_plan = FEEDING_PLAN_SERVICE()
+    feeding_schedules = entry.options.get("feeding_schedules", [])
+    for i, schedule in enumerate(feeding_schedules):
+        food_plan = FoodPlan(
+            grainNum=schedule["portions"],
+            executionTime=schedule["time"],
+            planId=i,
+        )
+        feeding_plan.add_plan(food_plan)
+
+    if feeding_schedules:
+        coordinator.feeder.update_feeding_plan_service(feeding_plan)
+    # @callback
+    # def schedule_changed(event):
+    #     """Handle schedule state changes."""
+    #     new_state = event.data.get("new_state")
+    #     if new_state and new_state.state == "on":
+    #         # Schedule is active - start vacuum
+    #         hass.async_create_task(
+    #             hass.services.async_call(
+    #                 "vacuum",
+    #                 "start",
+    #                 {"entity_id": entry.data["petlibro_serial_number"]},
+    #             )
+    #         )
+
+    # # Listen for schedule changes
+    # entry.async_on_unload(
+    #     async_track_state_change_event(
+    #         hass, schedule_entity_id, schedule_changed
+    #     )
+    # )
 
     async_add_entities(
         [PetlibroVacuumEntity(coordinator, entry)],
@@ -79,7 +110,9 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
         for key in entry.options:
             if key.startswith("feed_"):
                 if "portions" in key:
-                    plans[int(key.split("_")[1])]["portions"] = entry.options[key]
+                    plans[int(key.split("_")[1])]["portions"] = entry.options[
+                        key
+                    ]
                 elif "time" in key:
                     plans[int(key.split("_")[1])]["time"] = entry.options[key]
 
@@ -90,7 +123,9 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
                 grainNum=plans[item]["portions"],
             )
 
-        self._feeder.hass.async_create_task(self.coordinator.async_request_refresh())
+        self._feeder.hass.async_create_task(
+            self.coordinator.async_request_refresh()
+        )
 
     @property
     def device_info(self) -> dict[str, Any]:

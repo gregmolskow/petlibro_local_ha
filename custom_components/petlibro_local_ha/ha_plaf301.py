@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components import mqtt
 from homeassistant.core import callback
 
 from .const import (
+    _LOGGER,
     ERROR_CLOGGED,
     ERROR_EMPTY,
     ERROR_NONE,
@@ -26,6 +26,7 @@ from .const import (
 from .message_data import (
     ATTR_PUSH_EVENT,
     ATTR_SET_SERVICE,
+    DEVICE_FEEDING_PLAN_SERVICE,
     DEVICE_START_EVENT,
     FEEDING_PLAN_SERVICE,
     HEARTBEAT,
@@ -38,8 +39,6 @@ from .message_data import (
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
     from paho.mqtt.client import MQTTMessage
-
-_LOGGER = logging.getLogger(__name__)
 
 
 class PLAF301:
@@ -64,10 +63,10 @@ class PLAF301:
         self._model = MODEL_PLAF301
 
         # State tracking
-        self._current_state = ATTR_PUSH_EVENT()
-        self._startup_info = DEVICE_START_EVENT()
-        self._heartbeat = HEARTBEAT()
-        self._schedule = FEEDING_PLAN_SERVICE()
+        self._current_state: ATTR_PUSH_EVENT = ATTR_PUSH_EVENT()
+        self._startup_info: DEVICE_START_EVENT = DEVICE_START_EVENT()
+        self._heartbeat: HEARTBEAT = HEARTBEAT()
+        self._schedule: FEEDING_PLAN_SERVICE = FEEDING_PLAN_SERVICE()
 
         self._is_dispensing = False
         self._last_heartbeat: float = 0
@@ -183,6 +182,11 @@ class PLAF301:
             return ERROR_UNKNOWN
         return ERROR_NONE
 
+    @property
+    def feeding_schedule(self) -> dict[str, Any]:
+        """Get the current feeding schedule."""
+        return self._schedule.to_dict()
+
     def get_state_dict(self) -> dict[str, Any]:
         """Get state as dictionary for coordinator.
 
@@ -250,6 +254,9 @@ class PLAF301:
             # Sync time with device
             await self.sync_time()
 
+            # Request feeding schedule
+            await self.request_feeding_schedule()
+
             _LOGGER.info("Successfully started PLAF301 device: %s", self._sn)
 
         except Exception as err:
@@ -284,7 +291,9 @@ class PLAF301:
 
             elif cmd == "DEVICE_START_EVENT":
                 self._startup_info.from_mqtt_payload(payload)
-                _LOGGER.info("Device started: %s", self._startup_info.softwareVersion)
+                _LOGGER.info(
+                    "Device started: %s", self._startup_info.softwareVersion
+                )
 
             elif cmd == "WAREHOUSE_DOOR_EVENT":
                 door_state = payload.get("barnDoorState", False)
@@ -335,11 +344,12 @@ class PLAF301:
             payload: dict = json.loads(msg.payload)
             cmd = payload.get("cmd")
 
+            _LOGGER.info("Received control response: %s", payload)
             if cmd == "DEVICE_FEEDING_PLAN_SERVICE":
                 self._schedule.from_mqtt_payload(payload)
-                _LOGGER.debug("Updated feeding schedule")
+                _LOGGER.info("Updated feeding schedule")
             else:
-                _LOGGER.debug("Unknown control response: %s", cmd)
+                _LOGGER.warning("Unknown control response: %s", cmd)
 
         except Exception as err:
             _LOGGER.exception("Error handling control response: %s", err)
@@ -367,7 +377,22 @@ class PLAF301:
     async def sync_time(self) -> None:
         """Synchronize time with the device."""
         _LOGGER.debug("Syncing time with device")
+        # tmp = self._current_state.ts
         await self._publish_command(NTP_SYNC())
+        # while self._current_state.ts == tmp:
+        await asyncio.sleep(0.3)
+        #     _LOGGER.debug("NTP New TS %s, saved %s", self._schedule.ts, tmp)
+        # _LOGGER.debug("Feeding Plan update done")
+
+    async def request_feeding_schedule(self) -> None:
+        """Request the current feeding schedule from the device."""
+        _LOGGER.debug("Requesting feeding plan update")
+        tmp = self._schedule.ts
+        await self._publish_command(DEVICE_FEEDING_PLAN_SERVICE())
+        while self._schedule.ts == tmp:
+            await asyncio.sleep(0.3)
+            await self._publish_command(DEVICE_FEEDING_PLAN_SERVICE())
+        _LOGGER.debug("Feeding Plan update done")
 
     async def request_state_update(self) -> None:
         """Request current state from the device."""
@@ -409,3 +434,16 @@ class PLAF301:
         msg = MANUAL_FEEDING_SERVICE()
         msg.grainNum = amount
         await self._publish_command(msg)
+
+    async def update_feeding_plan_service(
+        self, feeding_plan: FEEDING_PLAN_SERVICE
+    ) -> None:
+        """Update and publish the feeding plan on the device.
+
+        Args:
+            feeding_plan: Feeding plan to set
+        """
+        _LOGGER.info("Setting feeding plan on device")
+        for plan in feeding_plan.plans:
+            self._schedule.update_plan(plan)
+        await self._publish_command(self._schedule)
