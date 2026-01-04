@@ -23,6 +23,7 @@
                 "menu_options": {
                     "add_schedule": "Add New Schedule",
                     "view_schedules": "View Schedules",
+                    "edit_schedule": "Edit Schedule",
                     "delete_schedule": "Delete Schedule",
                     "done": "Submit"
                 }
@@ -61,6 +62,18 @@
                 "description": "Select a schedule to edit",
                 "data": {
                     "schedule_to_edit": "Schedule to Edit"
+                }
+            },
+            "edit_schedule_form": {
+                "title": "Edit Feeding Schedule #{schedule_number}",
+                "description": "{info}",
+                "data": {
+                    "time": "Feeding Time",
+                    "portions": "Number of Portions"
+                },
+                "data_description": {
+                    "time": "What time should the feeder dispense food?",
+                    "portions": "How many portions should be dispensed?"
                 }
             },
             "other_settings": {
