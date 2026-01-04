@@ -6,21 +6,20 @@ integration that connects to Petlibro devices via MQTT.
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 from homeassistant.const import Platform
 from homeassistant.exceptions import ConfigEntryNotReady
 
+from .const import _LOGGER, TZ_OFFSET
 from .const import DOMAIN as DOMAIN
 from .coordinator import PetlibroCoordinator
-from .ha_plaf301 import PLAF301
+from .ha_plaf301 import FEEDING_PLAN_SERVICE, PLAF301, FoodPlan
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
-_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.VACUUM]
 
@@ -50,14 +49,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Create feeder instance
         feeder = PLAF301(hass, sn, name)
 
+        # Start MQTT subscriptions and get device info
+        await feeder.start()
+
         # Create coordinator
-        coordinator = PetlibroCoordinator(hass, entry, feeder)
+        coordinator: PetlibroCoordinator = PetlibroCoordinator(hass, entry, feeder)
 
         # Store coordinator in runtime data
-        entry.runtime_data = coordinator
+        entry.runtime_data: PetlibroCoordinator = coordinator  # type: ignore
 
-        # Start MQTT subscriptions
-        await feeder.start()
+        entry.async_on_unload(entry.add_update_listener(async_options_updated))
 
         # Perform initial data fetch
         await coordinator.async_config_entry_first_refresh()
@@ -71,6 +72,42 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except Exception as err:
         _LOGGER.exception("Failed to set up Petlibro integration: %s", err)
         raise ConfigEntryNotReady from err
+
+
+async def async_options_updated(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> None:
+    """Handle options update.
+
+    Args:
+        hass: Home Assistant instance
+        entry: Config entry
+    """
+    coordinator: PetlibroCoordinator = entry.runtime_data
+    feeding_plan = FEEDING_PLAN_SERVICE()
+    feeding_schedules = entry.options.get("feeding_schedules", [])
+    for schedule in feeding_schedules:
+        time = ":".join(schedule["time"].split(":")[:2])
+        hours, minutes = map(int, time.split(":"))
+
+        # Convert local time to UTC by subtracting timezone offset
+        utc_hours = (hours - int(TZ_OFFSET)) % 24
+        utc_time_str = f"{utc_hours:02d}:{minutes:02d}"
+        food_plan = FoodPlan(
+            grainNum=schedule["portions"],
+            executionTime=utc_time_str,
+            planId=schedule.get("planId"),
+        )
+        feeding_plan.add_plan(food_plan)
+
+    _LOGGER.debug("Updating feeding plan with schedules: %s", feeding_plan.to_dict())
+
+    if feeding_schedules:
+        await coordinator.feeder.update_feeding_plan_service(feeding_plan)
+
+        # Request refresh to get updated state
+        await coordinator.async_request_refresh()
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.vacuum import (
     StateVacuumEntity,
     VacuumEntityFeature,
 )
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, TZ, datetime
+from .const import _LOGGER, DOMAIN, TZ, datetime
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -19,8 +19,6 @@ if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
     from .coordinator import PetlibroCoordinator
-
-_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(

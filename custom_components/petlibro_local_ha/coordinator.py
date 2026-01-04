@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
@@ -11,15 +10,13 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
-from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
+from .const import _LOGGER, DEFAULT_SCAN_INTERVAL, DOMAIN
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
-    from .ha_plaf301 import PLAF301
-
-_LOGGER = logging.getLogger(__name__)
+from .ha_plaf301 import PLAF301
 
 
 class PetlibroCoordinator(DataUpdateCoordinator[dict]):

@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components import mqtt
 from homeassistant.core import callback
 
 from .const import (
+    _LOGGER,
     ERROR_CLOGGED,
     ERROR_EMPTY,
     ERROR_NONE,
@@ -26,6 +26,7 @@ from .const import (
 from .message_data import (
     ATTR_PUSH_EVENT,
     ATTR_SET_SERVICE,
+    DEVICE_FEEDING_PLAN_SERVICE,
     DEVICE_START_EVENT,
     FEEDING_PLAN_SERVICE,
     HEARTBEAT,
@@ -38,8 +39,6 @@ from .message_data import (
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
     from paho.mqtt.client import MQTTMessage
-
-_LOGGER = logging.getLogger(__name__)
 
 
 class PLAF301:
@@ -64,10 +63,10 @@ class PLAF301:
         self._model = MODEL_PLAF301
 
         # State tracking
-        self._current_state = ATTR_PUSH_EVENT()
-        self._startup_info = DEVICE_START_EVENT()
-        self._heartbeat = HEARTBEAT()
-        self._schedule = FEEDING_PLAN_SERVICE()
+        self._current_state: ATTR_PUSH_EVENT = ATTR_PUSH_EVENT()
+        self._startup_info: DEVICE_START_EVENT = DEVICE_START_EVENT()
+        self._heartbeat: HEARTBEAT = HEARTBEAT()
+        self._schedule: FEEDING_PLAN_SERVICE = FEEDING_PLAN_SERVICE()
 
         self._is_dispensing = False
         self._last_heartbeat: float = 0
@@ -183,6 +182,11 @@ class PLAF301:
             return ERROR_UNKNOWN
         return ERROR_NONE
 
+    @property
+    def feeding_schedule(self) -> dict[str, Any]:
+        """Get the current feeding schedule."""
+        return self._schedule.to_dict()
+
     def get_state_dict(self) -> dict[str, Any]:
         """Get state as dictionary for coordinator.
 
@@ -249,6 +253,9 @@ class PLAF301:
 
             # Sync time with device
             await self.sync_time()
+
+            # Request feeding schedule
+            await self.request_feeding_schedule()
 
             _LOGGER.info("Successfully started PLAF301 device: %s", self._sn)
 
@@ -319,7 +326,11 @@ class PLAF301:
             payload: dict = json.loads(msg.payload)
             self._last_heartbeat = payload.get("ts")
             self._heartbeat.from_mqtt_payload(payload)
-            _LOGGER.debug("Received heartbeat: RSSI=%s", self._heartbeat.rssi)
+            _LOGGER.debug(
+                "Received heartbeat(%s): RSSI=%s",
+                self._heartbeat.ts,
+                self._heartbeat.rssi,
+            )
 
         except Exception as err:
             _LOGGER.exception("Error handling heartbeat message: %s", err)
@@ -335,16 +346,17 @@ class PLAF301:
             payload: dict = json.loads(msg.payload)
             cmd = payload.get("cmd")
 
+            _LOGGER.info("Received control response: %s", payload)
             if cmd == "DEVICE_FEEDING_PLAN_SERVICE":
                 self._schedule.from_mqtt_payload(payload)
-                _LOGGER.debug("Updated feeding schedule")
+                _LOGGER.info(f"Updated feeding schedule {self._schedule.to_dict()}")
             else:
-                _LOGGER.debug("Unknown control response: %s", cmd)
+                _LOGGER.warning("Unknown control response: %s", cmd)
 
         except Exception as err:
             _LOGGER.exception("Error handling control response: %s", err)
 
-    async def _publish_command(self, message: Any) -> None:
+    async def _publish_command(self, message: MQTTMessage) -> None:
         """Publish a command to the device.
 
         Args:
@@ -358,7 +370,11 @@ class PLAF301:
                 payload,
                 qos=1,
             )
-            _LOGGER.debug("Published command: %s", message.cmd)
+            _LOGGER.debug(
+                "Published command: %s to topic %s",
+                message.cmd,
+                self.control_topic,
+            )
 
         except Exception as err:
             _LOGGER.exception("Error publishing command: %s", err)
@@ -367,16 +383,31 @@ class PLAF301:
     async def sync_time(self) -> None:
         """Synchronize time with the device."""
         _LOGGER.debug("Syncing time with device")
+        # tmp = self._current_state.ts
         await self._publish_command(NTP_SYNC())
+        # while self._current_state.ts == tmp:
+        await asyncio.sleep(0.3)
+        #     _LOGGER.debug("NTP New TS %s, saved %s", self._schedule.ts, tmp)
+        # _LOGGER.debug("Feeding Plan update done")
+
+    async def request_feeding_schedule(self) -> None:
+        """Request the current feeding schedule from the device."""
+        _LOGGER.debug("Requesting feeding plan update")
+        tmp = self._schedule.ts
+        await self._publish_command(DEVICE_FEEDING_PLAN_SERVICE())
+        while self._schedule.ts == tmp:
+            await asyncio.sleep(0.3)
+            await self._publish_command(DEVICE_FEEDING_PLAN_SERVICE())
+        _LOGGER.debug("Feeding Plan update done")
 
     async def request_state_update(self) -> None:
         """Request current state from the device."""
-        _LOGGER.warning("Requesting state update")
+        _LOGGER.debug("Requesting state update")
         tmp = self._heartbeat.ts
         await self._publish_command(NTP())
         while self._heartbeat.ts == tmp:
             await asyncio.sleep(0.1)
-        _LOGGER.warning("State update done")
+        _LOGGER.debug("State update done")
 
     async def open_door(self) -> None:
         """Open the barn door."""
@@ -409,3 +440,27 @@ class PLAF301:
         msg = MANUAL_FEEDING_SERVICE()
         msg.grainNum = amount
         await self._publish_command(msg)
+
+    async def update_feeding_plan_service(
+        self, feeding_plan: FEEDING_PLAN_SERVICE
+    ) -> None:
+        """Update and publish the feeding plan on the device.
+
+        Args:
+            feeding_plan: Feeding plan to set
+        """
+        _LOGGER.debug(f"Setting feeding plan on device from {self._schedule.to_dict()}")
+        self._schedule.plans = []
+        for idx, plan in enumerate(feeding_plan.plans, start=1):
+            # Ensure plan has proper ID
+            if plan.planId is None:
+                plan.planId = idx
+            _LOGGER.debug(f"    adding plan: {plan.to_dict()}")
+            self._schedule.plans.append(plan)
+        # for plan in feeding_plan.plans:
+        #     _LOGGER.debug(f"    new plan: {plan.to_dict()}")
+        #     self._schedule.update_plan(plan)
+        # _LOGGER.debug(f"Updated schedule: {self._schedule.to_dict()}")
+        tmp = self._schedule
+        # tmp.cmd = "DEVICE_FEEDING_PLAN_SERVICE"
+        await self._publish_command(tmp)
