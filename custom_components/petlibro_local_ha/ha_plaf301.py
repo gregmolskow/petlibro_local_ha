@@ -328,7 +328,11 @@ class PLAF301:
             payload: dict = json.loads(msg.payload)
             self._last_heartbeat = payload.get("ts")
             self._heartbeat.from_mqtt_payload(payload)
-            _LOGGER.debug("Received heartbeat: RSSI=%s", self._heartbeat.rssi)
+            _LOGGER.debug(
+                "Received heartbeat(%s): RSSI=%s",
+                self._heartbeat.ts,
+                self._heartbeat.rssi,
+            )
 
         except Exception as err:
             _LOGGER.exception("Error handling heartbeat message: %s", err)
@@ -347,14 +351,16 @@ class PLAF301:
             _LOGGER.info("Received control response: %s", payload)
             if cmd == "DEVICE_FEEDING_PLAN_SERVICE":
                 self._schedule.from_mqtt_payload(payload)
-                _LOGGER.info("Updated feeding schedule")
+                _LOGGER.info(
+                    f"Updated feeding schedule {self._schedule.to_dict()}"
+                )
             else:
                 _LOGGER.warning("Unknown control response: %s", cmd)
 
         except Exception as err:
             _LOGGER.exception("Error handling control response: %s", err)
 
-    async def _publish_command(self, message: Any) -> None:
+    async def _publish_command(self, message: MQTTMessage) -> None:
         """Publish a command to the device.
 
         Args:
@@ -368,7 +374,11 @@ class PLAF301:
                 payload,
                 qos=1,
             )
-            _LOGGER.debug("Published command: %s", message.cmd)
+            _LOGGER.debug(
+                "Published command: %s to topic %s",
+                message.cmd,
+                self.control_topic,
+            )
 
         except Exception as err:
             _LOGGER.exception("Error publishing command: %s", err)
@@ -396,12 +406,12 @@ class PLAF301:
 
     async def request_state_update(self) -> None:
         """Request current state from the device."""
-        _LOGGER.warning("Requesting state update")
+        _LOGGER.debug("Requesting state update")
         tmp = self._heartbeat.ts
         await self._publish_command(NTP())
         while self._heartbeat.ts == tmp:
             await asyncio.sleep(0.1)
-        _LOGGER.warning("State update done")
+        _LOGGER.debug("State update done")
 
     async def open_door(self) -> None:
         """Open the barn door."""
@@ -443,7 +453,20 @@ class PLAF301:
         Args:
             feeding_plan: Feeding plan to set
         """
-        _LOGGER.info("Setting feeding plan on device")
-        for plan in feeding_plan.plans:
-            self._schedule.update_plan(plan)
-        await self._publish_command(self._schedule)
+        _LOGGER.debug(
+            f"Setting feeding plan on device from {self._schedule.to_dict()}"
+        )
+        self._schedule.plans = []
+        for idx, plan in enumerate(feeding_plan.plans, start=1):
+            # Ensure plan has proper ID
+            if plan.planId is None:
+                plan.planId = idx
+            _LOGGER.debug(f"    adding plan: {plan.to_dict()}")
+            self._schedule.plans.append(plan)
+        # for plan in feeding_plan.plans:
+        #     _LOGGER.debug(f"    new plan: {plan.to_dict()}")
+        #     self._schedule.update_plan(plan)
+        # _LOGGER.debug(f"Updated schedule: {self._schedule.to_dict()}")
+        tmp = self._schedule
+        # tmp.cmd = "DEVICE_FEEDING_PLAN_SERVICE"
+        await self._publish_command(tmp)

@@ -63,20 +63,6 @@
                     "schedule_to_edit": "Schedule to Edit"
                 }
             },
-            "edit_schedule_form": {
-                "title": "Edit Schedule #{schedule_number}",
-                "description": "Update the feeding schedule. {info}",
-                "data": {
-                    "time": "Feeding Time",
-                    "days": "Days of Week",
-                    "portions": "Number of Portions"
-                },
-                "data_description": {
-                    "time": "What time should the feeder dispense food?",
-                    "days": "Select which days this schedule should run (leave empty for every day)",
-                    "portions": "How many portions should be dispensed?"
-                }
-            },
             "other_settings": {
                 "title": "Other Settings",
                 "description": "Configure additional settings",

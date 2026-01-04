@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import datetime
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import Any
 
-from .const import TZ_OFFSET
+from .const import _LOGGER, TZ_OFFSET
 
 
 @dataclass
@@ -27,12 +27,26 @@ class MQTTMessage:
         return json.dumps(self.to_dict())
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert message to dictionary.
-
+        """Convert message to dictionary, handling nested dataclasses.
         Returns:
             Dictionary representation of the message
         """
-        return {k: v for k, v in self.__dict__.items() if v is not None}
+        result = {}
+        for key, value in self.__dict__.items():
+            if value is None:
+                continue
+            # Handle nested dataclasses
+            if is_dataclass(value):
+                result[key] = asdict(value)
+            # Handle lists of dataclasses
+            elif isinstance(value, list):
+                result[key] = [
+                    asdict(item) if is_dataclass(item) else item
+                    for item in value
+                ]
+            else:
+                result[key] = value
+        return result
 
     def from_mqtt_payload(self, payload: dict[str, Any]) -> MQTTMessage:
         """Deserialize the message from a dictionary payload.
@@ -154,9 +168,9 @@ class MANUAL_FEEDING_SERVICE(PetlibroMessage):
 class NTP_SYNC(PetlibroMessage):
     """NTP synchronization message."""
 
-    def __post_init__(self) -> None:
-        """Set timestamp and timezone after initialization."""
-        super().__post_init__()
+    def __init__(self) -> None:
+        """Set timestamp and timezone during initialization."""
+        super().__init__()
         now = datetime.datetime.now(datetime.UTC)
         self.ts = now.timestamp() * 1000
 
@@ -213,9 +227,9 @@ class FEEDING_PLAN_SERVICE(PetlibroMessage):
         Args:
             plan: The feeding plan to add
         """
-        if plan.planId is None:
-            # Plan IDs start at 1, not 0
-            plan.planId = len(self.plans) + 1
+        # if plan.planId is None:
+        #     # Plan IDs start at 1, not 0
+        #     plan.planId = len(self.plans) + 1
         self.plans.append(plan)
 
     def remove_plan(self, index: int) -> FoodPlan:
@@ -242,17 +256,25 @@ class FEEDING_PLAN_SERVICE(PetlibroMessage):
             ValueError: If plan has no planId
             IndexError: If planId is invalid
         """
-        if plan.planId is None:
-            msg = "Plan ID must be set for update"
-            raise ValueError(msg)
+        _LOGGER.debug(f"Updating feeding plan: {plan.to_dict()}")
+        # if plan.planId is None:
+        #     msg = "Plan ID must be set for update"
+        #     raise ValueError(msg)
 
         # Find and update the plan
         for i, existing_plan in enumerate(self.plans):
-            if existing_plan.planId == plan.planId:
-                self.plans[i] = plan
+            _LOGGER.debug(
+                f"checking existing {self.plans[i].to_dict()} \n  against {plan.to_dict()}\n"
+            )
+            if existing_plan.executionTime == plan.executionTime:
+                _LOGGER.debug(f"updating plan: {plan.to_dict()}\n")
+                self.plans[i].executionTime = str(plan.executionTime)
+                self.plans[i].grainNum = plan.grainNum
+                self.plans[i].enableAudio = plan.enableAudio
+                self.plans[i].audioTimes = plan.audioTimes
                 return
 
-        msg = f"Plan with ID {plan.planId} not found"
+        msg = f"Plan with Time {plan.executionTime} not found in {self.plans}"
         raise IndexError(msg)
 
     def from_mqtt_payload(
@@ -267,6 +289,9 @@ class FEEDING_PLAN_SERVICE(PetlibroMessage):
             Self with updated attributes
         """
         # Handle plans list specially
+        _LOGGER.debug(
+            "Deserializing FEEDING_PLAN_SERVICE from payload: %s", payload
+        )
         plans_data = payload.get("plans", [])
         if plans_data:
             self.plans = []
@@ -277,7 +302,7 @@ class FEEDING_PLAN_SERVICE(PetlibroMessage):
 
         # Handle other fields
         for key, value in payload.items():
-            if key != "plans" and hasattr(self, key):
+            if key not in {"plans", "cmd"} and hasattr(self, key):
                 setattr(self, key, value)
 
         self.ts = payload.get("ts", -1)

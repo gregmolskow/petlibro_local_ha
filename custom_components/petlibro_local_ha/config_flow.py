@@ -12,7 +12,7 @@ from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
-from .const import _LOGGER, DEFAULT_SCAN_INTERVAL, DOMAIN
+from .const import _LOGGER, DEFAULT_SCAN_INTERVAL, DOMAIN, TZ_OFFSET
 
 # Serial number validation pattern (alphanumeric, typically 12+ characters)
 SERIAL_NUMBER_PATTERN = re.compile(r"^[A-Z0-9]{10,}$", re.IGNORECASE)
@@ -113,10 +113,26 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
         _LOGGER.debug("Loaded existing schedule: %s", schedule)
         self.feeding_schedules = []
         for plan in schedule.get("plans", []):
+            utc_time_str = plan.get("executionTime")
+            if utc_time_str:
+                hours, minutes = map(int, utc_time_str.split(":"))
+
+                # Convert UTC to local by adding timezone offset
+                local_hours = (hours + int(TZ_OFFSET)) % 24
+                local_time_str = f"{local_hours:02d}:{minutes:02d}"
+
+                _LOGGER.debug(
+                    f"Converting: {utc_time_str} (UTC) -> {local_time_str} (local), offset={TZ_OFFSET}"
+                )
+            else:
+                local_time_str = utc_time_str
             self.feeding_schedules.append({
-                "time": plan.executionTime,
-                "portions": plan.grainNum,
+                "time": local_time_str,
+                "portions": plan.get("grainNum"),
+                "planId": plan.get("planId"),
             })
+
+        self.feeding_schedules.sort(key=lambda x: x["time"])
 
     async def async_step_init(
         self,
@@ -254,9 +270,13 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             # Update the schedule
             if 0 <= self.edit_index < len(self.feeding_schedules):
+                original_plan_id = self.feeding_schedules[self.edit_index].get(
+                    "planId"
+                )
                 self.feeding_schedules[self.edit_index] = {
                     "time": user_input["time"],
                     "portions": user_input["portions"],
+                    "planId": original_plan_id,
                 }
             self.edit_index = None
             return await self.async_step_manage_schedules()
@@ -358,7 +378,11 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
         Returns:
             FlowResult: Create entry with all schedules
         """
-        return self.async_create_entry(
+
+        _LOGGER.debug(
+            " *** Updating feeding schedules: %s", self.feeding_schedules
+        )
+        result = self.async_create_entry(
             title="",
             data={
                 "feeding_schedules": self.feeding_schedules,
@@ -367,6 +391,10 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
                 ),
             },
         )
+
+        # await async_options_updated(self.hass, self.config_entry)
+
+        return result
 
     async def async_step_other_settings(
         self,
