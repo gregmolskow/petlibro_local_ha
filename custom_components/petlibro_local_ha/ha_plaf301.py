@@ -291,9 +291,7 @@ class PLAF301:
 
             elif cmd == "DEVICE_START_EVENT":
                 self._startup_info.from_mqtt_payload(payload)
-                _LOGGER.info(
-                    "Device started: %s", self._startup_info.softwareVersion
-                )
+                _LOGGER.info("Device started: %s", self._startup_info.softwareVersion)
 
             elif cmd == "WAREHOUSE_DOOR_EVENT":
                 door_state = payload.get("barnDoorState", False)
@@ -351,9 +349,7 @@ class PLAF301:
             _LOGGER.info("Received control response: %s", payload)
             if cmd == "DEVICE_FEEDING_PLAN_SERVICE":
                 self._schedule.from_mqtt_payload(payload)
-                _LOGGER.info(
-                    f"Updated feeding schedule {self._schedule.to_dict()}"
-                )
+                _LOGGER.info(f"Updated feeding schedule {self._schedule.to_dict()}")
             else:
                 _LOGGER.warning("Unknown control response: %s", cmd)
 
@@ -453,9 +449,7 @@ class PLAF301:
         Args:
             feeding_plan: Feeding plan to set
         """
-        _LOGGER.debug(
-            f"Setting feeding plan on device from {self._schedule.to_dict()}"
-        )
+        _LOGGER.debug(f"Setting feeding plan on device from {self._schedule.to_dict()}")
         self._schedule.plans = []
         for idx, plan in enumerate(feeding_plan.plans, start=1):
             # Ensure plan has proper ID

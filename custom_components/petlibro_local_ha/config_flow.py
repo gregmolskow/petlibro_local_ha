@@ -40,9 +40,7 @@ class PetlibroConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             try:
                 # Validate and normalize serial number
-                serial_number = (
-                    user_input["petlibro_serial_number"].strip().upper()
-                )
+                serial_number = user_input["petlibro_serial_number"].strip().upper()
 
                 if not SERIAL_NUMBER_PATTERN.match(serial_number):
                     errors["petlibro_serial_number"] = "invalid_serial"
@@ -69,13 +67,15 @@ class PetlibroConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "unknown"
 
         # Build schema
-        data_schema = vol.Schema({
-            vol.Required("petlibro_serial_number"): cv.string,
-            vol.Optional(
-                "petlibro_device_name",
-                default="Petlibro Feeder",
-            ): cv.string,
-        })
+        data_schema = vol.Schema(
+            {
+                vol.Required("petlibro_serial_number"): cv.string,
+                vol.Optional(
+                    "petlibro_device_name",
+                    default="Petlibro Feeder",
+                ): cv.string,
+            }
+        )
 
         return self.async_show_form(
             step_id="user",
@@ -126,11 +126,13 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
                 )
             else:
                 local_time_str = utc_time_str
-            self.feeding_schedules.append({
-                "time": local_time_str,
-                "portions": plan.get("grainNum"),
-                "planId": plan.get("planId"),
-            })
+            self.feeding_schedules.append(
+                {
+                    "time": local_time_str,
+                    "portions": plan.get("grainNum"),
+                    "planId": plan.get("planId"),
+                }
+            )
 
         self.feeding_schedules.sort(key=lambda x: x["time"])
 
@@ -187,36 +189,38 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
         """
         if user_input is not None:
             # Add the new schedule
-            self.feeding_schedules.append({
-                "time": user_input["time"],
-                "portions": user_input["portions"],
-            })
+            self.feeding_schedules.append(
+                {
+                    "time": user_input["time"],
+                    "portions": user_input["portions"],
+                }
+            )
             return await self.async_step_manage_schedules()
 
         return self.async_show_form(
             step_id="add_schedule",
-            data_schema=vol.Schema({
-                vol.Required("time"): selector.TimeSelector(),
-                # vol.Optional("days"): selector.SelectSelector(
-                #     selector.SelectSelectorConfig(
-                #         options=[
-                #             {"value": "mon", "label": "Monday"},
-                #             {"value": "tue", "label": "Tuesday"},
-                #             {"value": "wed", "label": "Wednesday"},
-                #             {"value": "thu", "label": "Thursday"},
-                #             {"value": "fri", "label": "Friday"},
-                #             {"value": "sat", "label": "Saturday"},
-                #             {"value": "sun", "label": "Sunday"},
-                #         ],
-                #         multiple=True,
-                #         mode="dropdown",
-                #     )
-                # ),
-                vol.Required("portions", default=1): int,
-            }),
-            description_placeholders={
-                "info": "Leave days empty to feed every day"
-            },
+            data_schema=vol.Schema(
+                {
+                    vol.Required("time"): selector.TimeSelector(),
+                    # vol.Optional("days"): selector.SelectSelector(
+                    #     selector.SelectSelectorConfig(
+                    #         options=[
+                    #             {"value": "mon", "label": "Monday"},
+                    #             {"value": "tue", "label": "Tuesday"},
+                    #             {"value": "wed", "label": "Wednesday"},
+                    #             {"value": "thu", "label": "Thursday"},
+                    #             {"value": "fri", "label": "Friday"},
+                    #             {"value": "sat", "label": "Saturday"},
+                    #             {"value": "sun", "label": "Sunday"},
+                    #         ],
+                    #         multiple=True,
+                    #         mode="dropdown",
+                    #     )
+                    # ),
+                    vol.Required("portions", default=1): int,
+                }
+            ),
+            description_placeholders={"info": "Leave days empty to feed every day"},
         )
 
     async def async_step_edit_schedule(
@@ -246,13 +250,15 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="edit_schedule",
-            data_schema=vol.Schema({
-                vol.Required("schedule_to_edit"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=schedule_options, mode="dropdown"
-                    )
-                ),
-            }),
+            data_schema=vol.Schema(
+                {
+                    vol.Required("schedule_to_edit"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=schedule_options, mode="dropdown"
+                        )
+                    ),
+                }
+            ),
         )
 
     async def async_step_edit_schedule_form(
@@ -270,9 +276,7 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             # Update the schedule
             if 0 <= self.edit_index < len(self.feeding_schedules):
-                original_plan_id = self.feeding_schedules[self.edit_index].get(
-                    "planId"
-                )
+                original_plan_id = self.feeding_schedules[self.edit_index].get("planId")
                 self.feeding_schedules[self.edit_index] = {
                     "time": user_input["time"],
                     "portions": user_input["portions"],
@@ -291,14 +295,16 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="edit_schedule_form",
-            data_schema=vol.Schema({
-                vol.Required(
-                    "time", default=current_schedule.get("time")
-                ): selector.TimeSelector(),
-                vol.Required(
-                    "portions", default=current_schedule.get("portions", 1)
-                ): int,
-            }),
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        "time", default=current_schedule.get("time")
+                    ): selector.TimeSelector(),
+                    vol.Required(
+                        "portions", default=current_schedule.get("portions", 1)
+                    ): int,
+                }
+            ),
             description_placeholders={
                 "info": "Update the feeding schedule. Leave days empty to feed every day",
                 "schedule_number": str(self.edit_index + 1),
@@ -315,13 +321,15 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
             FlowResult: Form showing schedules
         """
         # Format schedules for display
-        schedule_text = "\n\n".join([
-            f"Schedule {i + 1}:\n"
-            f"  Time: {s['time']}\n"
-            f"  Days: {', '.join(s.get('days', [])) if s.get('days') else 'Every day'}\n"
-            f"  Portions: {s['portions']}"
-            for i, s in enumerate(self.feeding_schedules)
-        ])
+        schedule_text = "\n\n".join(
+            [
+                f"Schedule {i + 1}:\n"
+                f"  Time: {s['time']}\n"
+                f"  Days: {', '.join(s.get('days', [])) if s.get('days') else 'Every day'}\n"
+                f"  Portions: {s['portions']}"
+                for i, s in enumerate(self.feeding_schedules)
+            ]
+        )
 
         return self.async_show_form(
             step_id="view_schedules",
@@ -360,13 +368,15 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="delete_schedule",
-            data_schema=vol.Schema({
-                vol.Required("schedule_to_delete"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=schedule_options, mode="dropdown"
-                    )
-                ),
-            }),
+            data_schema=vol.Schema(
+                {
+                    vol.Required("schedule_to_delete"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=schedule_options, mode="dropdown"
+                        )
+                    ),
+                }
+            ),
         )
 
     async def async_step_done(
@@ -379,9 +389,7 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
             FlowResult: Create entry with all schedules
         """
 
-        _LOGGER.debug(
-            " *** Updating feeding schedules: %s", self.feeding_schedules
-        )
+        _LOGGER.debug(" *** Updating feeding schedules: %s", self.feeding_schedules)
 
         # await async_options_updated(self.hass, self.config_entry)
 
@@ -426,12 +434,14 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="other_settings",
-            data_schema=vol.Schema({
-                vol.Optional(
-                    "scan_interval",
-                    default=current_scan_interval,
-                ): int,
-            }),
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        "scan_interval",
+                        default=current_scan_interval,
+                    ): int,
+                }
+            ),
         )
 
 
