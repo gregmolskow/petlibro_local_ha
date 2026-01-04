@@ -1,3 +1,9 @@
+## 1.0.0 (2025-12-21)
+
+### Features
+
+* state updates implemented ([3da0361](https://github.com/gregmolskow/petlibro_local_ha/commit/3da03619f8309130be3ae78f6619c022f195c0dc))
+
 ## [1.0.1](https://github.com/gregmolskow/template/compare/v1.0.0...v1.0.1) (2025-12-20)
 
 ### Documentation
