@@ -6,7 +6,6 @@ integration that connects to Petlibro devices via MQTT.
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 from homeassistant.const import Platform

@@ -382,7 +382,10 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
         _LOGGER.debug(
             " *** Updating feeding schedules: %s", self.feeding_schedules
         )
-        result = self.async_create_entry(
+
+        # await async_options_updated(self.hass, self.config_entry)
+
+        return self.async_create_entry(
             title="",
             data={
                 "feeding_schedules": self.feeding_schedules,
@@ -391,10 +394,6 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
                 ),
             },
         )
-
-        # await async_options_updated(self.hass, self.config_entry)
-
-        return result
 
     async def async_step_other_settings(
         self,
