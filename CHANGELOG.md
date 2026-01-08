@@ -1,3 +1,9 @@
+## [1.2.0](https://github.com/gregmolskow/petlibro_local_ha/compare/v1.1.0...v1.2.0) (2026-01-08)
+
+### Features
+
+* add connection tracking ([#11](https://github.com/gregmolskow/petlibro_local_ha/issues/11)) ([7447567](https://github.com/gregmolskow/petlibro_local_ha/commit/74475677ae8938139345bcef04c9ec1edceb4208))
+
 ## [1.1.0](https://github.com/gregmolskow/petlibro_local_ha/compare/v1.0.0...v1.1.0) (2026-01-04)
 
 ### Features
