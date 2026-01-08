@@ -1,3 +1,9 @@
+## [1.1.0](https://github.com/gregmolskow/petlibro_local_ha/compare/v1.0.0...v1.1.0) (2026-01-04)
+
+### Features
+
+* schedule implementation ([efb3f52](https://github.com/gregmolskow/petlibro_local_ha/commit/efb3f520946d5e458b58ff29af1cd5b01e9c7d6f))
+
 ## 1.0.0 (2025-12-21)
 
 ### Features
