@@ -76,7 +76,15 @@ class PetlibroCoordinator(DataUpdateCoordinator[dict]):
             UpdateFailed: If unable to fetch data
         """
         try:
-            _LOGGER.info("State Chanege %s", self._state_change)
+            _LOGGER.info("State Change %s", self._state_change)
+
+            # Check if device is online
+            if not self.feeder.is_online:
+                _LOGGER.warning(
+                    "Device appears offline - last heartbeat was %s seconds ago",
+                    self.feeder.seconds_since_last_heartbeat,
+                )
+
             if not self._state_change:
                 # Request state update from device
                 _LOGGER.debug("Petlibro coordinator requesting state update")
