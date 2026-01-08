@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components import mqtt
@@ -44,6 +45,9 @@ if TYPE_CHECKING:
 class PLAF301:
     """MQTT-enabled Petlibro PLAF301 feeder."""
 
+    HEARTBEAT_TIMEOUT = 300
+    """The maximum allowed time (in seconds) between heartbeats before considering the device offline."""
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -70,6 +74,7 @@ class PLAF301:
 
         self._is_dispensing = False
         self._last_heartbeat: float = 0
+        self._last_heartbeat_time: float = time.time()
 
         # MQTT unsubscribe functions
         self._unsub_funcs: list = []
@@ -152,9 +157,25 @@ class PLAF301:
         return not self._current_state.surplusGrain
 
     @property
-    def battery_level(self) -> int | None:
-        """Return battery level percentage."""
-        return self._current_state.electricQuantity
+    def is_online(self) -> bool:
+        """Check if device is online based on heartbeat."""
+        if self._last_heartbeat_time == 0:
+            return False
+
+        time_since_heartbeat = time.time() - self._last_heartbeat_time
+        return time_since_heartbeat < self.HEARTBEAT_TIMEOUT
+
+    @property
+    def last_seen(self) -> float:
+        """Return timestamp of last heartbeat."""
+        return self._last_heartbeat_time
+
+    @property
+    def seconds_since_last_heartbeat(self) -> int:
+        """Return seconds since last heartbeat."""
+        if self._last_heartbeat_time == 0:
+            return -1
+        return int(time.time() - self._last_heartbeat_time)
 
     @property
     def current_state(self) -> FeederState:
@@ -200,9 +221,11 @@ class PLAF301:
             "is_dispensing": self.is_dispensing,
             "is_empty": self.is_empty,
             "is_clogged": self.is_clogged,
-            "battery_level": self.battery_level,
             "error_code": self.error_code,
             "rssi": self._heartbeat.rssi,
+            "is_online": self.is_online,  # Add this
+            "last_seen": self.last_seen,  # Add this
+            "seconds_since_heartbeat": self.seconds_since_last_heartbeat,  # Add this
         }
 
     def add_feeding_plan(
@@ -325,12 +348,17 @@ class PLAF301:
         try:
             payload: dict = json.loads(msg.payload)
             self._last_heartbeat = payload.get("ts")
+            self._last_heartbeat_time = time.time()
             self._heartbeat.from_mqtt_payload(payload)
             _LOGGER.debug(
                 "Received heartbeat(%s): RSSI=%s",
                 self._heartbeat.ts,
                 self._heartbeat.rssi,
             )
+
+            # Trigger state update since device is online
+            if self._state_change_callback:
+                self.hass.async_create_task(self._state_change_callback())
 
         except Exception as err:
             _LOGGER.exception("Error handling heartbeat message: %s", err)

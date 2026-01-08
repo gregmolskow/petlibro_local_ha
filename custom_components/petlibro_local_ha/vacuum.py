@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.vacuum import (
@@ -11,7 +12,7 @@ from homeassistant.components.vacuum import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import _LOGGER, DOMAIN, TZ, datetime
+from .const import _LOGGER, DOMAIN, TZ
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -91,6 +92,14 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
         self._feeder.hass.async_create_task(self.coordinator.async_request_refresh())
 
     @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        # Device is available if coordinator has data and device is online
+        if not self.coordinator.data:
+            return False
+        return self.coordinator.data.get("is_online", False)
+
+    @property
     def device_info(self) -> dict[str, Any]:
         """Return device information for device registry."""
         return {
@@ -118,15 +127,35 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
         if not self.coordinator.data:
             return {}
 
-        ts = datetime.fromtimestamp(datetime.now(TZ).timestamp()).strftime(
+        ts = datetime.fromtimestamp(datetime.now(TZ).timestamp(), TZ).strftime(
             "%d/%m/%Y %H:%M:%S"
         )
+
+        # Get last seen timestamp
+        last_seen_ts = self.coordinator.data.get("last_seen", 0)
+        if last_seen_ts > 0:
+            last_seen = datetime.fromtimestamp(last_seen_ts, TZ).strftime(
+                "%d/%m/%Y %H:%M:%S"
+            )
+        else:
+            last_seen = "Never"
+
+        seconds_since = self.coordinator.data.get("seconds_since_heartbeat", -1)
+        if seconds_since >= 0:
+            minutes_since = seconds_since // 60
+            time_since = f"{minutes_since}m {seconds_since % 60}s ago"
+        else:
+            time_since = "Unknown"
+
         return {
             "door_open": self.coordinator.data.get("is_door_open", False),
             "dispensing": self.coordinator.data.get("is_dispensing", False),
             "empty": self.coordinator.data.get("is_empty", False),
             "clogged": self.coordinator.data.get("is_clogged", False),
             "error": self.coordinator.data.get("error_code", "none"),
+            "online": self.coordinator.data.get("is_online", False),  # Add this
+            "last_seen": last_seen,  # Add this
+            "time_since_heartbeat": time_since,  # Add this
             "Last Update": ts,
             "Battery": self.coordinator.data.get("battery_level"),
             "RSSI": self.coordinator.data.get("rssi"),
