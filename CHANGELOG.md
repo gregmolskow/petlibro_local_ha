@@ -1,3 +1,9 @@
+## [1.3.0](https://github.com/gregmolskow/petlibro_local_ha/compare/v1.2.0...v1.3.0) (2026-01-09)
+
+### Features
+
+* added sensors for better debugging ([#6](https://github.com/gregmolskow/petlibro_local_ha/issues/6)) ([#12](https://github.com/gregmolskow/petlibro_local_ha/issues/12)) ([00aa96b](https://github.com/gregmolskow/petlibro_local_ha/commit/00aa96b6d5b7371b06e91b4964046a1c36ffc2e3))
+
 ## [1.2.0](https://github.com/gregmolskow/petlibro_local_ha/compare/v1.1.0...v1.2.0) (2026-01-08)
 
 ### Features
