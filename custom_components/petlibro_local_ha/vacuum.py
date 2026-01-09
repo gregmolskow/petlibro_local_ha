@@ -50,7 +50,7 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
         | VacuumEntityFeature.STATE
         | VacuumEntityFeature.BATTERY
         | VacuumEntityFeature.STATUS
-        | VacuumEntityFeature.RETURN_HOME
+        # | VacuumEntityFeature.RETURN_HOME
     )
     _attr_has_entity_name = True
 
@@ -78,7 +78,9 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
         for key in entry.options:
             if key.startswith("feed_"):
                 if "portions" in key:
-                    plans[int(key.split("_")[1])]["portions"] = entry.options[key]
+                    plans[int(key.split("_")[1])]["portions"] = entry.options[
+                        key
+                    ]
                 elif "time" in key:
                     plans[int(key.split("_")[1])]["time"] = entry.options[key]
 
@@ -89,7 +91,9 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
                 grainNum=plans[item]["portions"],
             )
 
-        self._feeder.hass.async_create_task(self.coordinator.async_request_refresh())
+        self._feeder.hass.async_create_task(
+            self.coordinator.async_request_refresh()
+        )
 
     @property
     def available(self) -> bool:
@@ -127,14 +131,14 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
         if not self.coordinator.data:
             return {}
 
-        ts = datetime.fromtimestamp(datetime.now(TZ).timestamp(), TZ).strftime(
+        ts = datetime.fromtimestamp(datetime.now(TZ).timestamp()).strftime(
             "%d/%m/%Y %H:%M:%S"
         )
 
         # Get last seen timestamp
         last_seen_ts = self.coordinator.data.get("last_seen", 0)
         if last_seen_ts > 0:
-            last_seen = datetime.fromtimestamp(last_seen_ts, TZ).strftime(
+            last_seen = datetime.fromtimestamp(last_seen_ts).strftime(
                 "%d/%m/%Y %H:%M:%S"
             )
         else:
@@ -147,15 +151,26 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
         else:
             time_since = "Unknown"
 
+        # Determine door status string
+        if self.coordinator.data.get("is_door_opening", False):
+            door_status = "Opening"
+        elif self.coordinator.data.get("is_door_closing", False):
+            door_status = "Closing"
+        elif self.coordinator.data.get("is_door_open", False):
+            door_status = "Open"
+        else:
+            door_status = "Closed"
+
         return {
             "door_open": self.coordinator.data.get("is_door_open", False),
+            "door_status": door_status,  # <-- ADD THIS
             "dispensing": self.coordinator.data.get("is_dispensing", False),
             "empty": self.coordinator.data.get("is_empty", False),
             "clogged": self.coordinator.data.get("is_clogged", False),
             "error": self.coordinator.data.get("error_code", "none"),
-            "online": self.coordinator.data.get("is_online", False),  # Add this
-            "last_seen": last_seen,  # Add this
-            "time_since_heartbeat": time_since,  # Add this
+            "online": self.coordinator.data.get("is_online", False),
+            "last_seen": last_seen,
+            "time_since_heartbeat": time_since,
             "Last Update": ts,
             "Battery": self.coordinator.data.get("battery_level"),
             "RSSI": self.coordinator.data.get("rssi"),
@@ -167,11 +182,11 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
         await self._feeder.dispense_food(1)
         await self.coordinator.async_request_refresh()
 
-    async def async_return_to_base(self, **kwargs: Any) -> None:
-        """Return to base (toggle door)."""
-        _LOGGER.info("Returning to base (toggling door)")
-        await self._feeder.toggle_door()
-        await self.coordinator.async_request_refresh()
+    # async def async_return_to_base(self, **kwargs: Any) -> None:
+    #     """Return to base (toggle door)."""
+    #     _LOGGER.info("Returning to base (toggling door)")
+    #     await self._feeder.toggle_door()
+    #     await self.coordinator.async_request_refresh()
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
