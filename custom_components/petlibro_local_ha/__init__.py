@@ -58,9 +58,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await feeder.start()
 
         # Create coordinator
-        coordinator: PetlibroCoordinator = PetlibroCoordinator(
-            hass, entry, feeder
-        )
+        coordinator: PetlibroCoordinator = PetlibroCoordinator(hass, entry, feeder)
 
         # Store coordinator in runtime data
         entry.runtime_data: PetlibroCoordinator = coordinator  # type: ignore
@@ -108,9 +106,7 @@ async def async_options_updated(
         )
         feeding_plan.add_plan(food_plan)
 
-    _LOGGER.debug(
-        "Updating feeding plan with schedules: %s", feeding_plan.to_dict()
-    )
+    _LOGGER.debug("Updating feeding plan with schedules: %s", feeding_plan.to_dict())
 
     if feeding_schedules:
         await coordinator.feeder.update_feeding_plan_service(feeding_plan)
@@ -129,9 +125,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     Returns:
         True if unload was successful
     """
-    unload_ok = await hass.config_entries.async_unload_platforms(
-        entry, PLATFORMS
-    )
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
         coordinator: PetlibroCoordinator = entry.runtime_data
