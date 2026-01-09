@@ -131,14 +131,14 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
         if not self.coordinator.data:
             return {}
 
-        ts = datetime.fromtimestamp(datetime.now(TZ).timestamp()).strftime(
+        ts = datetime.fromtimestamp(datetime.now(TZ).timestamp(), TZ).strftime(
             "%d/%m/%Y %H:%M:%S"
         )
 
         # Get last seen timestamp
         last_seen_ts = self.coordinator.data.get("last_seen", 0)
         if last_seen_ts > 0:
-            last_seen = datetime.fromtimestamp(last_seen_ts).strftime(
+            last_seen = datetime.fromtimestamp(last_seen_ts, TZ).strftime(
                 "%d/%m/%Y %H:%M:%S"
             )
         else:

@@ -318,7 +318,7 @@ class PLAF301:
         self._unsub_funcs.clear()
 
     @callback
-    def _handle_event_message(self, msg: MQTTMessage) -> None:
+    def _handle_event_message(self, msg: MQTTMessage) -> None:  # noqa: PLR0912, PLR0915
         """Handle incoming event messages.
 
         Args:
@@ -327,7 +327,6 @@ class PLAF301:
         try:
             payload: dict = json.loads(msg.payload)
             cmd = payload.get("cmd")
-
             update: bool = True
 
             if cmd == "ATTR_PUSH_EVENT":

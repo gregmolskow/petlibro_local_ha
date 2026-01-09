@@ -56,32 +56,29 @@ class PLAF301StatusSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         """Return the state of the sensor."""
+
         if not self.coordinator.data:
-            return "Unknown"
+            value: str = "Unknown"
 
         # Check various states in priority order
-        if not self.coordinator.data.get("is_online", False):
-            return "Offline"
+        elif not self.coordinator.data.get("is_online", False):
+            value = "Offline"
+        elif self.coordinator.data.get("is_dispensing", False):
+            value = "Dispensing"
+        elif self.coordinator.data.get("is_door_opening", False):
+            value = "Door Opening"
+        elif self.coordinator.data.get("is_door_closing", False):
+            value = "Door Closing"
+        elif self.coordinator.data.get("is_empty", False):
+            value = "Empty"
+        elif self.coordinator.data.get("is_clogged", False):
+            value = "Clogged"
+        elif self.coordinator.data.get("is_door_open", False):
+            value = "Door Open"
+        else:
+            value = "Idle"
 
-        if self.coordinator.data.get("is_dispensing", False):
-            return "Dispensing"
-
-        if self.coordinator.data.get("is_door_opening", False):
-            return "Door Opening"
-
-        if self.coordinator.data.get("is_door_closing", False):
-            return "Door Closing"
-
-        if self.coordinator.data.get("is_empty", False):
-            return "Empty"
-
-        if self.coordinator.data.get("is_clogged", False):
-            return "Clogged"
-
-        if self.coordinator.data.get("is_door_open", False):
-            return "Door Open"
-
-        return "Idle"
+        return value
 
     @property
     def icon(self):
