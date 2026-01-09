@@ -21,7 +21,12 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 
-PLATFORMS: list[Platform] = [Platform.VACUUM, Platform.SENSOR]
+PLATFORMS: list[Platform] = [
+    Platform.VACUUM,
+    Platform.SENSOR,
+    Platform.COVER,
+    Platform.BUTTON,
+]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

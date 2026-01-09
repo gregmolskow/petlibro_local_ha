@@ -76,6 +76,11 @@ class PLAF301:
         self._last_heartbeat: float = 0
         self._last_heartbeat_time: float = time.time()
 
+        # Add door transition tracking
+        self._door_is_opening = False  # <-- ADD THIS
+        self._door_is_closing = False  # <-- ADD THIS
+        self._door_transition_timer = None  # <-- ADD THIS
+
         # MQTT unsubscribe functions
         self._unsub_funcs: list = []
 
@@ -140,6 +145,16 @@ class PLAF301:
     def is_door_open(self) -> bool:
         """Check if the barn door is open."""
         return self._current_state.barnDoorState or False
+
+    @property
+    def is_door_opening(self) -> bool:
+        """Check if door is currently opening."""
+        return self._door_is_opening
+
+    @property
+    def is_door_closing(self) -> bool:
+        """Check if door is currently closing."""
+        return self._door_is_closing
 
     @property
     def is_clogged(self) -> bool:
@@ -218,14 +233,16 @@ class PLAF301:
             "state": self.current_state,
             "activity": self.current_state.to_ha_activity(),
             "is_door_open": self.is_door_open,
+            "is_door_opening": self.is_door_opening,  # <-- ADD THIS
+            "is_door_closing": self.is_door_closing,  # <-- ADD THIS
             "is_dispensing": self.is_dispensing,
             "is_empty": self.is_empty,
             "is_clogged": self.is_clogged,
             "error_code": self.error_code,
             "rssi": self._heartbeat.rssi,
-            "is_online": self.is_online,  # Add this
-            "last_seen": self.last_seen,  # Add this
-            "seconds_since_heartbeat": self.seconds_since_last_heartbeat,  # Add this
+            "is_online": self.is_online,
+            "last_seen": self.last_seen,
+            "seconds_since_heartbeat": self.seconds_since_last_heartbeat,
         }
 
     def add_feeding_plan(
@@ -290,13 +307,18 @@ class PLAF301:
         """Clean up resources."""
         _LOGGER.info("Cleaning up PLAF301 device: %s", self._sn)
 
+        # Cancel door transition timer if active
+        if self._door_transition_timer:
+            self._door_transition_timer.cancel()
+            self._door_transition_timer = None
+
         # Unsubscribe from MQTT topics
         for unsub in self._unsub_funcs:
             unsub()
         self._unsub_funcs.clear()
 
     @callback
-    def _handle_event_message(self, msg: MQTTMessage) -> None:
+    def _handle_event_message(self, msg: MQTTMessage) -> None:  # noqa: PLR0912, PLR0915
         """Handle incoming event messages.
 
         Args:
@@ -305,7 +327,6 @@ class PLAF301:
         try:
             payload: dict = json.loads(msg.payload)
             cmd = payload.get("cmd")
-
             update: bool = True
 
             if cmd == "ATTR_PUSH_EVENT":
@@ -318,6 +339,48 @@ class PLAF301:
 
             elif cmd == "WAREHOUSE_DOOR_EVENT":
                 door_state = payload.get("barnDoorState", False)
+                trigger_type = payload.get("triggerType", "")
+
+                _LOGGER.debug(
+                    "Door event: state=%s, trigger=%s, current_state=%s",
+                    door_state,
+                    trigger_type,
+                    self._current_state.barnDoorState,
+                )
+
+                # Determine if door is transitioning
+                old_state = self._current_state.barnDoorState
+                new_state = door_state
+
+                # Clear any existing transition timer
+                if self._door_transition_timer:
+                    self._door_transition_timer.cancel()
+                    self._door_transition_timer = None
+
+                if old_state != new_state:
+                    # Door state is changing
+                    if new_state:
+                        # Door is opening
+                        self._door_is_opening = True
+                        self._door_is_closing = False
+                        _LOGGER.debug("Door is opening")
+                    else:
+                        # Door is closing
+                        self._door_is_opening = False
+                        self._door_is_closing = True
+                        _LOGGER.debug("Door is closing")
+
+                    # Set a timer to clear the transition state after 5 seconds
+                    # (in case we don't get a final state update)
+                    self._door_transition_timer = self.hass.loop.call_later(
+                        5.0, self._clear_door_transition
+                    )
+                else:
+                    # Door has reached its final position
+                    self._door_is_opening = False
+                    self._door_is_closing = False
+                    _LOGGER.debug("Door reached final position")
+
                 self._current_state.barnDoorState = door_state
                 _LOGGER.debug("Door state changed: %s", door_state)
 
@@ -335,8 +398,28 @@ class PLAF301:
                 _LOGGER.debug("Updating values from state change")
                 self.hass.async_create_task(self._state_change_callback())
 
+            else:
+                _LOGGER.warning("Unknown event command: %s", cmd)
+                update = False
+
+            # Notify callback of state change
+            if self._state_change_callback and update:
+                _LOGGER.debug("Updating values from state change")
+                self.hass.async_create_task(self._state_change_callback())
+
         except Exception as err:
             _LOGGER.exception("Error handling event message: %s", err)
+
+    def _clear_door_transition(self) -> None:
+        """Clear door transition flags (called by timer)."""
+        _LOGGER.debug("Clearing door transition state (timeout)")
+        self._door_is_opening = False
+        self._door_is_closing = False
+        self._door_transition_timer = None
+
+        # Notify callback of state change
+        if self._state_change_callback:
+            self.hass.async_create_task(self._state_change_callback())
 
     @callback
     def _handle_heartbeat_message(self, msg: MQTTMessage) -> None:
@@ -440,12 +523,24 @@ class PLAF301:
     async def open_door(self) -> None:
         """Open the barn door."""
         _LOGGER.info("Opening barn door")
+        self._door_is_opening = True
+        self._door_is_closing = False
         await self._publish_command(ATTR_SET_SERVICE(coverOpen=True))
+
+        # Notify callback of state change
+        if self._state_change_callback:
+            await self._state_change_callback()
 
     async def close_door(self) -> None:
         """Close the barn door."""
         _LOGGER.info("Closing barn door")
+        self._door_is_closing = True
+        self._door_is_opening = False
         await self._publish_command(ATTR_SET_SERVICE(coverOpen=False))
+
+        # Notify callback of state change
+        if self._state_change_callback:
+            await self._state_change_callback()
 
     async def toggle_door(self) -> None:
         """Toggle the barn door state."""

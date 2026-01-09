@@ -50,7 +50,7 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
         | VacuumEntityFeature.STATE
         | VacuumEntityFeature.BATTERY
         | VacuumEntityFeature.STATUS
-        | VacuumEntityFeature.RETURN_HOME
+        # | VacuumEntityFeature.RETURN_HOME
     )
     _attr_has_entity_name = True
 
@@ -147,15 +147,26 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
         else:
             time_since = "Unknown"
 
+        # Determine door status string
+        if self.coordinator.data.get("is_door_opening", False):
+            door_status = "Opening"
+        elif self.coordinator.data.get("is_door_closing", False):
+            door_status = "Closing"
+        elif self.coordinator.data.get("is_door_open", False):
+            door_status = "Open"
+        else:
+            door_status = "Closed"
+
         return {
             "door_open": self.coordinator.data.get("is_door_open", False),
+            "door_status": door_status,  # <-- ADD THIS
             "dispensing": self.coordinator.data.get("is_dispensing", False),
             "empty": self.coordinator.data.get("is_empty", False),
             "clogged": self.coordinator.data.get("is_clogged", False),
             "error": self.coordinator.data.get("error_code", "none"),
-            "online": self.coordinator.data.get("is_online", False),  # Add this
-            "last_seen": last_seen,  # Add this
-            "time_since_heartbeat": time_since,  # Add this
+            "online": self.coordinator.data.get("is_online", False),
+            "last_seen": last_seen,
+            "time_since_heartbeat": time_since,
             "Last Update": ts,
             "Battery": self.coordinator.data.get("battery_level"),
             "RSSI": self.coordinator.data.get("rssi"),
@@ -167,11 +178,11 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
         await self._feeder.dispense_food(1)
         await self.coordinator.async_request_refresh()
 
-    async def async_return_to_base(self, **kwargs: Any) -> None:
-        """Return to base (toggle door)."""
-        _LOGGER.info("Returning to base (toggling door)")
-        await self._feeder.toggle_door()
-        await self.coordinator.async_request_refresh()
+    # async def async_return_to_base(self, **kwargs: Any) -> None:
+    #     """Return to base (toggle door)."""
+    #     _LOGGER.info("Returning to base (toggling door)")
+    #     await self._feeder.toggle_door()
+    #     await self.coordinator.async_request_refresh()
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
