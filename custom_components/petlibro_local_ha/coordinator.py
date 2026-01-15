@@ -10,7 +10,7 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
-from .const import _LOGGER, DEFAULT_SCAN_INTERVAL, DOMAIN
+from .shared_const import _LOGGER, DEFAULT_SCAN_INTERVAL, DOMAIN
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry

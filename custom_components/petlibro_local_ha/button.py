@@ -8,8 +8,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import _LOGGER, DOMAIN
 from .coordinator import PetlibroCoordinator
+from .shared_const import _LOGGER, DOMAIN
 
 
 async def async_setup_entry(
@@ -73,6 +73,8 @@ class PetlibroDispenseButton(CoordinatorEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         """Handle the button press."""
-        _LOGGER.info("Dispensing %s portion(s) via button press", self._portions)
+        _LOGGER.info(
+            "Dispensing %s portion(s) via button press", self._portions
+        )
         await self._feeder.dispense_food(self._portions)
         await self.coordinator.async_request_refresh()

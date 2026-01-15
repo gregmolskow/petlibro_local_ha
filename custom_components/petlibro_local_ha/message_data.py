@@ -11,7 +11,7 @@ import json
 from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import Any
 
-from .const import _LOGGER, TZ_OFFSET
+from .shared_const import _LOGGER, TZ_OFFSET
 
 
 @dataclass
@@ -41,7 +41,8 @@ class MQTTMessage:
             # Handle lists of dataclasses
             elif isinstance(value, list):
                 result[key] = [
-                    asdict(item) if is_dataclass(item) else item for item in value
+                    asdict(item) if is_dataclass(item) else item
+                    for item in value
                 ]
             else:
                 result[key] = value
@@ -276,7 +277,9 @@ class FEEDING_PLAN_SERVICE(PetlibroMessage):
         msg = f"Plan with Time {plan.executionTime} not found in {self.plans}"
         raise IndexError(msg)
 
-    def from_mqtt_payload(self, payload: dict[str, Any]) -> FEEDING_PLAN_SERVICE:
+    def from_mqtt_payload(
+        self, payload: dict[str, Any]
+    ) -> FEEDING_PLAN_SERVICE:
         """Deserialize feeding plan service from payload.
 
         Args:
@@ -286,7 +289,9 @@ class FEEDING_PLAN_SERVICE(PetlibroMessage):
             Self with updated attributes
         """
         # Handle plans list specially
-        _LOGGER.debug("Deserializing FEEDING_PLAN_SERVICE from payload: %s", payload)
+        _LOGGER.debug(
+            "Deserializing FEEDING_PLAN_SERVICE from payload: %s", payload
+        )
         plans_data = payload.get("plans", [])
         if plans_data:
             self.plans = []

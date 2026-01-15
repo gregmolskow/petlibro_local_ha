@@ -1,4 +1,4 @@
-"""PLAF301 Petlibro feeder device handler."""
+"""PLWF116 Petlibro feeder device handler."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from .message_data import (
     NTP_SYNC,
     FoodPlan,
 )
-from .plaf301_const import (
+from .plwf116_const import (
     ERROR_CLOGGED,
     ERROR_EMPTY,
     ERROR_NONE,
@@ -32,7 +32,7 @@ from .plaf301_const import (
 from .shared_const import (
     _LOGGER,
     MANUFACTURER,
-    MODEL_PLAF301,
+    MODEL_PLWF116,
     TOPIC_DEVICE_CONTROL,
     TOPIC_DEVICE_CONTROL_IN,
     TOPIC_DEVICE_EVENT,
@@ -44,8 +44,8 @@ if TYPE_CHECKING:
     from paho.mqtt.client import MQTTMessage
 
 
-class PLAF301:
-    """MQTT-enabled Petlibro PLAF301 feeder."""
+class PLWF116:
+    """MQTT-enabled Petlibro PLWF116 water fountain."""
 
     HEARTBEAT_TIMEOUT = 300
     """The maximum allowed time (in seconds) between heartbeats before considering the device offline."""
@@ -66,7 +66,7 @@ class PLAF301:
         self.hass = hass
         self._sn = serial_number.upper()
         self._name = name
-        self._model = MODEL_PLAF301
+        self._model = MODEL_PLWF116
 
         # State tracking
         self._current_state: ATTR_PUSH_EVENT = ATTR_PUSH_EVENT()

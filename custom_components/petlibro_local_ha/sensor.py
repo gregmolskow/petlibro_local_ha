@@ -13,8 +13,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, TZ
 from .coordinator import PetlibroCoordinator
+from .shared_const import DOMAIN, TZ
 
 
 async def async_setup_entry(
@@ -151,7 +151,9 @@ class PLAF301ConnectivitySensor(CoordinatorEntity, SensorEntity):
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self._attr_unique_id = f"{entry.data['petlibro_serial_number']}_last_heartbeat"
+        self._attr_unique_id = (
+            f"{entry.data['petlibro_serial_number']}_last_heartbeat"
+        )
         self._feeder = coordinator.feeder
 
     @property
