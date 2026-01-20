@@ -57,9 +57,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     config = entry.data
     device_type: str = config.get("petlibro_device_type", "feeder")
     sn: str = config.get("petlibro_serial_number", "")
-    name: str = config.get(
-        "petlibro_device_name", f"Petlibro {device_type.title()}"
-    )
+    name: str = config.get("petlibro_device_name", f"Petlibro {device_type.title()}")
 
     if not sn:
         _LOGGER.error("No serial number provided in config entry")
@@ -81,9 +79,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await device.start()
 
         # Create coordinator for this device
-        coordinator: PetlibroCoordinator = PetlibroCoordinator(
-            hass, entry, device
-        )
+        coordinator: PetlibroCoordinator = PetlibroCoordinator(hass, entry, device)
 
         # Store coordinator and device in runtime data
         entry.runtime_data = {
@@ -152,9 +148,7 @@ async def async_options_updated(
 
         # Validate time format
         if not isinstance(time_str, str) or ":" not in time_str:
-            _LOGGER.warning(
-                "Schedule %d has invalid time format: %s", idx, time_str
-            )
+            _LOGGER.warning("Schedule %d has invalid time format: %s", idx, time_str)
             continue
 
         try:
@@ -197,9 +191,7 @@ async def async_options_updated(
             )
 
         except (ValueError, IndexError) as e:
-            _LOGGER.warning(
-                "Error processing schedule %d (%s): %s", idx, schedule, e
-            )
+            _LOGGER.warning("Error processing schedule %d (%s): %s", idx, schedule, e)
             continue
 
     _LOGGER.debug(
@@ -238,9 +230,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     else:
         platforms = []
 
-    unload_ok = await hass.config_entries.async_unload_platforms(
-        entry, platforms
-    )
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, platforms)
 
     if unload_ok:
         device = runtime_data["device"]

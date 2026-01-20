@@ -146,9 +146,7 @@ class PLWF116(PetlibroDeviceBase):
 
         return False
 
-    def _handle_device_specific_control_response(
-        self, cmd: str, payload: dict
-    ) -> bool:
+    def _handle_device_specific_control_response(self, cmd: str, payload: dict) -> bool:
         """Handle water fountain-specific control responses.
 
         Args:
