@@ -45,9 +45,7 @@ class PetlibroConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             try:
                 # Validate and normalize serial number
-                serial_number = (
-                    user_input["petlibro_serial_number"].strip().upper()
-                )
+                serial_number = user_input["petlibro_serial_number"].strip().upper()
 
                 if not SERIAL_NUMBER_PATTERN.match(serial_number):
                     errors["petlibro_serial_number"] = "invalid_serial"
@@ -60,13 +58,9 @@ class PetlibroConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     self._abort_if_unique_id_configured()
 
                     # Get device type and name
-                    device_type = user_input.get(
-                        "petlibro_device_type", "feeder"
-                    )
+                    device_type = user_input.get("petlibro_device_type", "feeder")
                     device_type_label = (
-                        "Feeder"
-                        if device_type == "feeder"
-                        else "Water Fountain"
+                        "Feeder" if device_type == "feeder" else "Water Fountain"
                     )
 
                     # Create entry
@@ -85,19 +79,21 @@ class PetlibroConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "unknown"
 
         # Build schema
-        data_schema = vol.Schema({
-            vol.Required("petlibro_device_type"): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=DEVICE_TYPES,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            ),
-            vol.Required("petlibro_serial_number"): cv.string,
-            vol.Optional(
-                "petlibro_device_name",
-                default="",
-            ): cv.string,
-        })
+        data_schema = vol.Schema(
+            {
+                vol.Required("petlibro_device_type"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=DEVICE_TYPES,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Required("petlibro_serial_number"): cv.string,
+                vol.Optional(
+                    "petlibro_device_name",
+                    default="",
+                ): cv.string,
+            }
+        )
 
         return self.async_show_form(
             step_id="user",
@@ -134,9 +130,7 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
             config_entry: Config entry instance
         """
         self.config_entry = config_entry
-        self.device_type = config_entry.data.get(
-            "petlibro_device_type", "feeder"
-        )
+        self.device_type = config_entry.data.get("petlibro_device_type", "feeder")
         self.feeding_schedules = []
 
         # Only load feeding schedules for feeders
@@ -150,9 +144,7 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
             not hasattr(self.config_entry, "runtime_data")
             or not self.config_entry.runtime_data
         ):
-            _LOGGER.warning(
-                "Runtime data not available during options flow init"
-            )
+            _LOGGER.warning("Runtime data not available during options flow init")
             return
 
         try:
@@ -175,9 +167,7 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
                     continue
 
                 if grain_num is None or grain_num == 0:
-                    _LOGGER.warning(
-                        "Skipping plan with invalid grainNum: %s", plan
-                    )
+                    _LOGGER.warning("Skipping plan with invalid grainNum: %s", plan)
                     continue
 
                 # Convert UTC time to local time
@@ -190,22 +180,20 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
                         f"Converting: {utc_time_str} (UTC) -> {local_time_str} (local), offset={TZ_OFFSET}"
                     )
                 except (ValueError, AttributeError) as e:
-                    _LOGGER.warning(
-                        "Error converting time %s: %s", utc_time_str, e
-                    )
+                    _LOGGER.warning("Error converting time %s: %s", utc_time_str, e)
                     continue
 
-                self.feeding_schedules.append({
-                    "time": local_time_str,
-                    "portions": grain_num,
-                    "planId": plan_id,
-                })
+                self.feeding_schedules.append(
+                    {
+                        "time": local_time_str,
+                        "portions": grain_num,
+                        "planId": plan_id,
+                    }
+                )
 
             # Sort schedules by time
             self.feeding_schedules.sort(key=lambda x: x["time"])
-            _LOGGER.debug(
-                "Initialized with schedules: %s", self.feeding_schedules
-            )
+            _LOGGER.debug("Initialized with schedules: %s", self.feeding_schedules)
 
         except Exception as e:
             _LOGGER.exception("Error loading feeding schedules: %s", e)
@@ -273,10 +261,12 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
                 portions = 1
 
             # Add the new schedule
-            self.feeding_schedules.append({
-                "time": user_input["time"],
-                "portions": portions,
-            })
+            self.feeding_schedules.append(
+                {
+                    "time": user_input["time"],
+                    "portions": portions,
+                }
+            )
             _LOGGER.debug(
                 "Added schedule: time=%s, portions=%s",
                 user_input["time"],
@@ -286,19 +276,19 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="add_schedule",
-            data_schema=vol.Schema({
-                vol.Required("time"): selector.TimeSelector(),
-                vol.Required("portions", default=1): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1,
-                        max=10,
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-            }),
-            description_placeholders={
-                "info": "Set feeding time and portion count"
-            },
+            data_schema=vol.Schema(
+                {
+                    vol.Required("time"): selector.TimeSelector(),
+                    vol.Required("portions", default=1): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=1,
+                            max=10,
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                }
+            ),
+            description_placeholders={"info": "Set feeding time and portion count"},
         )
 
     async def async_step_edit_schedule(
@@ -328,13 +318,15 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="edit_schedule",
-            data_schema=vol.Schema({
-                vol.Required("schedule_to_edit"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=schedule_options, mode="dropdown"
-                    )
-                ),
-            }),
+            data_schema=vol.Schema(
+                {
+                    vol.Required("schedule_to_edit"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=schedule_options, mode="dropdown"
+                        )
+                    ),
+                }
+            ),
         )
 
     async def async_step_edit_schedule_form(
@@ -352,9 +344,7 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             # Update the schedule
             if 0 <= self.edit_index < len(self.feeding_schedules):
-                original_plan_id = self.feeding_schedules[self.edit_index].get(
-                    "planId"
-                )
+                original_plan_id = self.feeding_schedules[self.edit_index].get("planId")
                 portions = user_input.get("portions", 1)
                 if portions is None or portions < 1:
                     portions = 1
@@ -382,18 +372,20 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="edit_schedule_form",
-            data_schema=vol.Schema({
-                vol.Required(
-                    "time", default=current_schedule.get("time")
-                ): selector.TimeSelector(),
-                vol.Required("portions", default=1): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1,
-                        max=10,
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-            }),
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        "time", default=current_schedule.get("time")
+                    ): selector.TimeSelector(),
+                    vol.Required("portions", default=1): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=1,
+                            max=10,
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                }
+            ),
             description_placeholders={
                 "info": "Update the feeding schedule",
                 "schedule_number": str(self.edit_index + 1),
@@ -417,10 +409,12 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
             return await self.async_step_manage_schedules()
 
         # Format schedules for display
-        schedule_text = "\n\n".join([
-            f"Schedule {i + 1}:\n  Time: {s['time']}\n  Portions: {s['portions']}"
-            for i, s in enumerate(self.feeding_schedules)
-        ])
+        schedule_text = "\n\n".join(
+            [
+                f"Schedule {i + 1}:\n  Time: {s['time']}\n  Portions: {s['portions']}"
+                for i, s in enumerate(self.feeding_schedules)
+            ]
+        )
 
         return self.async_show_form(
             step_id="view_schedules",
@@ -460,13 +454,15 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="delete_schedule",
-            data_schema=vol.Schema({
-                vol.Required("schedule_to_delete"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=schedule_options, mode="dropdown"
-                    )
-                ),
-            }),
+            data_schema=vol.Schema(
+                {
+                    vol.Required("schedule_to_delete"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=schedule_options, mode="dropdown"
+                        )
+                    ),
+                }
+            ),
         )
 
     async def async_step_done(
@@ -521,12 +517,14 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="other_settings",
-            data_schema=vol.Schema({
-                vol.Optional(
-                    "scan_interval",
-                    default=current_scan_interval,
-                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=60)),
-            }),
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        "scan_interval",
+                        default=current_scan_interval,
+                    ): vol.All(vol.Coerce(int), vol.Range(min=1, max=60)),
+                }
+            ),
             description_placeholders={
                 "info": "Configure polling interval (minutes between status updates)"
             },

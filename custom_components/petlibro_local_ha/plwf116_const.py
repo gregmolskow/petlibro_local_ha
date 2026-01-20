@@ -25,3 +25,6 @@ ERROR_FILTER_REPLACE = "filter_replace"
 ERROR_PUMP_FAULT = "pump_fault"
 ERROR_UNKNOWN = "unknown"
 ERROR_NONE = "none"
+
+WATTER_LEVEL_LOW_THRESHOLD = 20  # Percentage
+FILTER_LIFE_REPLACE_THRESHOLD = 10  # Percentage

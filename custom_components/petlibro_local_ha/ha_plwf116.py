@@ -10,6 +10,8 @@ from .plwf116_const import (
     ERROR_LOW_WATER,
     ERROR_NONE,
     ERROR_UNKNOWN,
+    FILTER_LIFE_REPLACE_THRESHOLD,
+    WATTER_LEVEL_LOW_THRESHOLD,
     WaterFountainState,
 )
 from .shared_const import (
@@ -64,12 +66,12 @@ class PLWF116(PetlibroDeviceBase):
     @property
     def is_low_water(self) -> bool:
         """Check if water level is low."""
-        return self._water_level < 20
+        return self._water_level < WATTER_LEVEL_LOW_THRESHOLD
 
     @property
     def needs_filter_change(self) -> bool:
         """Check if filter needs replacement."""
-        return self._filter_life < 10
+        return self._filter_life < FILTER_LIFE_REPLACE_THRESHOLD
 
     @property
     def current_state(self) -> WaterFountainState:
@@ -169,7 +171,7 @@ class PLWF116(PetlibroDeviceBase):
 
     # ==================== Lifecycle ====================
 
-    async def _device_specific_start(self) -> None:
+    async def _device_specific_start(self) -> None:  # noqa: PLR6301
         """Perform water fountain-specific initialization."""
         # Request current water level and filter status
         _LOGGER.debug("Water fountain initialization complete")

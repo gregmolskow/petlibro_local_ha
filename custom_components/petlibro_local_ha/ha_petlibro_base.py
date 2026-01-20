@@ -197,9 +197,7 @@ class PetlibroDeviceBase(ABC):
             # Device-specific initialization
             await self._device_specific_start()
 
-            _LOGGER.info(
-                "Successfully started %s device: %s", self._model, self._sn
-            )
+            _LOGGER.info("Successfully started %s device: %s", self._model, self._sn)
 
         except Exception as err:
             _LOGGER.exception("Failed to start %s device: %s", self._model, err)
@@ -237,9 +235,7 @@ class PetlibroDeviceBase(ABC):
 
             elif cmd == "DEVICE_START_EVENT":
                 self._startup_info.from_mqtt_payload(payload)
-                _LOGGER.info(
-                    "Device started: %s", self._startup_info.softwareVersion
-                )
+                _LOGGER.info("Device started: %s", self._startup_info.softwareVersion)
 
             else:
                 # Let subclass handle device-specific events
@@ -364,9 +360,7 @@ class PetlibroDeviceBase(ABC):
         """
 
     @abstractmethod
-    def _handle_device_specific_control_response(
-        self, cmd: str, payload: dict
-    ) -> bool:
+    def _handle_device_specific_control_response(self, cmd: str, payload: dict) -> bool:
         """Handle device-specific control responses.
 
         Args:

@@ -230,9 +230,7 @@ class PLAF301(PetlibroDeviceBase):
         if self._state_change_callback:
             self.hass.async_create_task(self._state_change_callback())
 
-    def _handle_device_specific_control_response(
-        self, cmd: str, payload: dict
-    ) -> bool:
+    def _handle_device_specific_control_response(self, cmd: str, payload: dict) -> bool:
         """Handle feeder-specific control responses.
 
         Args:
@@ -347,9 +345,7 @@ class PLAF301(PetlibroDeviceBase):
         Args:
             feeding_plan: Feeding plan to set
         """
-        _LOGGER.debug(
-            f"Setting feeding plan on device from {self._schedule.to_dict()}"
-        )
+        _LOGGER.debug(f"Setting feeding plan on device from {self._schedule.to_dict()}")
         self._schedule.plans = []
         for idx, plan in enumerate(feeding_plan.plans, start=1):
             # Ensure plan has proper ID

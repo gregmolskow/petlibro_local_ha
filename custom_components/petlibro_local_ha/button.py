@@ -76,8 +76,6 @@ class PetlibroDispenseButton(CoordinatorEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         """Handle the button press."""
-        _LOGGER.info(
-            "Dispensing %s portion(s) via button press", self._portions
-        )
+        _LOGGER.info("Dispensing %s portion(s) via button press", self._portions)
         await self._device.dispense_food(self._portions)
         await self.coordinator.async_request_refresh()

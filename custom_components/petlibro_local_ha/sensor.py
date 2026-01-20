@@ -151,9 +151,7 @@ class PLAF301ConnectivitySensor(CoordinatorEntity, SensorEntity):
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._device = device
-        self._attr_unique_id = (
-            f"{entry.data['petlibro_serial_number']}_last_heartbeat"
-        )
+        self._attr_unique_id = f"{entry.data['petlibro_serial_number']}_last_heartbeat"
 
     @property
     def native_value(self):

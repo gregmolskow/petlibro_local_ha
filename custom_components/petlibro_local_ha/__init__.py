@@ -164,7 +164,7 @@ async def async_options_updated(
             minutes = int(time_parts[1])
 
             # Validate time values
-            if not (0 <= hours < 24 and 0 <= minutes < 60):
+            if not (0 <= hours < 24 and 0 <= minutes < 60):  # noqa: PLR2004
                 _LOGGER.warning(
                     "Schedule %d has invalid time values: %02d:%02d",
                     idx,
@@ -243,7 +243,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     if unload_ok:
-        coordinator: PetlibroCoordinator = runtime_data["coordinator"]
         device = runtime_data["device"]
 
         # Clean up device

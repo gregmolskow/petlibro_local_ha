@@ -38,9 +38,7 @@ class PLAF301CoverEntity(CoordinatorEntity, CoverEntity):
     _attr_has_entity_name = True
     _attr_name = "Food Cover"
     _attr_device_class = CoverDeviceClass.SHUTTER
-    _attr_supported_features = (
-        CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE
-    )
+    _attr_supported_features = CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE
 
     def __init__(
         self,
