@@ -11,7 +11,7 @@ import json
 from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import Any
 
-from .const import _LOGGER, TZ_OFFSET
+from .shared_const import _LOGGER, TZ_OFFSET
 
 
 @dataclass

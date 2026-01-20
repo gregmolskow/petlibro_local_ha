@@ -6,15 +6,14 @@ from typing import Any
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
-    SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, TZ
 from .coordinator import PetlibroCoordinator
+from .shared_const import DOMAIN, TZ
 
 
 async def async_setup_entry(
@@ -23,14 +22,14 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Petlibro sensors from a config entry."""
-    coordinator: PetlibroCoordinator = entry.runtime_data
+    runtime_data = entry.runtime_data
+    coordinator: PetlibroCoordinator = runtime_data["coordinator"]
+    device = runtime_data["device"]
 
     async_add_entities(
         [
-            PLAF301ConnectivitySensor(coordinator, entry),
-            # PLAF301RSSISensor(coordinator, entry),
-            # PLAF301BatterySensor(coordinator, entry),
-            PLAF301StatusSensor(coordinator, entry),
+            PLAF301ConnectivitySensor(coordinator, entry, device),
+            PLAF301StatusSensor(coordinator, entry, device),
         ],
         update_before_add=True,
     )
@@ -46,20 +45,19 @@ class PLAF301StatusSensor(CoordinatorEntity, SensorEntity):
         self,
         coordinator: PetlibroCoordinator,
         entry: ConfigEntry,
+        device,
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
+        self._device = device
         self._attr_unique_id = f"{entry.data['petlibro_serial_number']}_status"
-        self._attr_name = f"{entry.data['petlibro_device_name']} Status"
-        self._feeder = coordinator.feeder
+        self._attr_name = "Status"
 
     @property
     def native_value(self):
         """Return the state of the sensor."""
-
         if not self.coordinator.data:
             value: str = "Unknown"
-
         # Check various states in priority order
         elif not self.coordinator.data.get("is_online", False):
             value = "Offline"
@@ -124,13 +122,13 @@ class PLAF301StatusSensor(CoordinatorEntity, SensorEntity):
     def device_info(self) -> dict[str, Any]:
         """Return device information for device registry."""
         return {
-            "identifiers": {(DOMAIN, self._feeder.serial_number)},
-            "name": self._attr_name,
-            "manufacturer": self._feeder.manufacturer,
-            "model": self._feeder.model,
+            "identifiers": {(DOMAIN, self._device.serial_number)},
+            "name": self._device.name,
+            "manufacturer": self._device.manufacturer,
+            "model": self._device.model,
             "sw_version": (
-                self._feeder._startup_info.softwareVersion
-                if self._feeder._startup_info.softwareVersion
+                self._device._startup_info.softwareVersion
+                if self._device._startup_info.softwareVersion
                 else None
             ),
         }
@@ -148,11 +146,12 @@ class PLAF301ConnectivitySensor(CoordinatorEntity, SensorEntity):
         self,
         coordinator: PetlibroCoordinator,
         entry: ConfigEntry,
+        device,
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
+        self._device = device
         self._attr_unique_id = f"{entry.data['petlibro_serial_number']}_last_heartbeat"
-        self._feeder = coordinator.feeder
 
     @property
     def native_value(self):
@@ -174,98 +173,13 @@ class PLAF301ConnectivitySensor(CoordinatorEntity, SensorEntity):
     def device_info(self) -> dict[str, Any]:
         """Return device information for device registry."""
         return {
-            "identifiers": {(DOMAIN, self._feeder.serial_number)},
-            "name": self._attr_name,
-            "manufacturer": self._feeder.manufacturer,
-            "model": self._feeder.model,
+            "identifiers": {(DOMAIN, self._device.serial_number)},
+            "name": self._device.name,
+            "manufacturer": self._device.manufacturer,
+            "model": self._device.model,
             "sw_version": (
-                self._feeder._startup_info.softwareVersion
-                if self._feeder._startup_info.softwareVersion
-                else None
-            ),
-        }
-
-
-class PLAF301RSSISensor(CoordinatorEntity, SensorEntity):
-    """Sensor showing WiFi signal strength."""
-
-    _attr_has_entity_name = True
-    _attr_name = "WiFi Signal"
-    _attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
-    _attr_native_unit_of_measurement = "dBm"
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_icon = "mdi:wifi"
-
-    def __init__(
-        self,
-        coordinator: PetlibroCoordinator,
-        entry: ConfigEntry,
-    ) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{entry.data['petlibro_serial_number']}_rssi"
-        self._feeder = coordinator.feeder
-
-    @property
-    def native_value(self):
-        """Return the state of the sensor."""
-        if not self.coordinator.data:
-            return None
-        return self.coordinator.data.get("rssi")
-
-    @property
-    def device_info(self) -> dict[str, Any]:
-        """Return device information for device registry."""
-        return {
-            "identifiers": {(DOMAIN, self._feeder.serial_number)},
-            "name": self._attr_name,
-            "manufacturer": self._feeder.manufacturer,
-            "model": self._feeder.model,
-            "sw_version": (
-                self._feeder._startup_info.softwareVersion
-                if self._feeder._startup_info.softwareVersion
-                else None
-            ),
-        }
-
-
-class PLAF301BatterySensor(CoordinatorEntity, SensorEntity):
-    """Sensor showing battery level."""
-
-    _attr_has_entity_name = True
-    _attr_name = "Battery"
-    _attr_device_class = SensorDeviceClass.BATTERY
-    _attr_native_unit_of_measurement = "%"
-    _attr_state_class = SensorStateClass.MEASUREMENT
-
-    def __init__(
-        self,
-        coordinator: PetlibroCoordinator,
-        entry: ConfigEntry,
-    ) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{entry.data['petlibro_serial_number']}_battery"
-        self._feeder = coordinator.feeder
-
-    @property
-    def native_value(self):
-        """Return the state of the sensor."""
-        if not self.coordinator.data:
-            return None
-        return self.coordinator.data.get("battery_level")
-
-    @property
-    def device_info(self) -> dict[str, Any]:
-        """Return device information for device registry."""
-        return {
-            "identifiers": {(DOMAIN, self._feeder.serial_number)},
-            "name": self._attr_name,
-            "manufacturer": self._feeder.manufacturer,
-            "model": self._feeder.model,
-            "sw_version": (
-                self._feeder._startup_info.softwareVersion
-                if self._feeder._startup_info.softwareVersion
+                self._device._startup_info.softwareVersion
+                if self._device._startup_info.softwareVersion
                 else None
             ),
         }

@@ -8,8 +8,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import _LOGGER, DOMAIN
 from .coordinator import PetlibroCoordinator
+from .shared_const import _LOGGER, DOMAIN
 
 
 async def async_setup_entry(
@@ -18,10 +18,12 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Petlibro button from a config entry."""
-    coordinator: PetlibroCoordinator = entry.runtime_data
+    runtime_data = entry.runtime_data
+    coordinator: PetlibroCoordinator = runtime_data["coordinator"]
+    device = runtime_data["device"]
 
     async_add_entities(
-        [PetlibroDispenseButton(coordinator, entry, portions=1)],
+        [PetlibroDispenseButton(coordinator, entry, device, portions=1)],
         update_before_add=True,
     )
 
@@ -35,12 +37,13 @@ class PetlibroDispenseButton(CoordinatorEntity, ButtonEntity):
         self,
         coordinator: PetlibroCoordinator,
         entry: ConfigEntry,
+        device,
         portions: int = 1,
     ) -> None:
         """Initialize the button entity."""
         super().__init__(coordinator)
+        self._device = device
         self._portions = portions
-        self._feeder = coordinator.feeder
 
         # Set unique ID and name based on portions
         self._attr_unique_id = (
@@ -58,10 +61,10 @@ class PetlibroDispenseButton(CoordinatorEntity, ButtonEntity):
     def device_info(self) -> dict[str, Any]:
         """Return device information."""
         return {
-            "identifiers": {(DOMAIN, self._feeder.serial_number)},
-            "name": self._feeder.name,
-            "manufacturer": self._feeder.manufacturer,
-            "model": self._feeder.model,
+            "identifiers": {(DOMAIN, self._device.serial_number)},
+            "name": self._device.name,
+            "manufacturer": self._device.manufacturer,
+            "model": self._device.model,
         }
 
     @property
@@ -74,5 +77,5 @@ class PetlibroDispenseButton(CoordinatorEntity, ButtonEntity):
     async def async_press(self) -> None:
         """Handle the button press."""
         _LOGGER.info("Dispensing %s portion(s) via button press", self._portions)
-        await self._feeder.dispense_food(self._portions)
+        await self._device.dispense_food(self._portions)
         await self.coordinator.async_request_refresh()

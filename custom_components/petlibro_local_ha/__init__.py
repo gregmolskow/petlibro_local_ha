@@ -11,21 +11,33 @@ from typing import TYPE_CHECKING
 from homeassistant.const import Platform
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from .const import _LOGGER, TZ_OFFSET
-from .const import DOMAIN as DOMAIN
 from .coordinator import PetlibroCoordinator
 from .ha_plaf301 import FEEDING_PLAN_SERVICE, PLAF301, FoodPlan
+from .ha_plwf116 import PLWF116
+from .shared_const import (
+    _LOGGER,
+    TZ_OFFSET,
+)
+from .shared_const import (
+    DOMAIN as DOMAIN,
+)
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
 
-PLATFORMS: list[Platform] = [
+# Platform mapping by device type
+FEEDER_PLATFORMS: list[Platform] = [
     Platform.VACUUM,
     Platform.SENSOR,
     Platform.COVER,
     Platform.BUTTON,
+]
+
+FOUNTAIN_PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
+    Platform.SWITCH,
 ]
 
 
@@ -43,35 +55,48 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ConfigEntryNotReady: If MQTT connection fails
     """
     config = entry.data
+    device_type: str = config.get("petlibro_device_type", "feeder")
     sn: str = config.get("petlibro_serial_number", "")
-    name: str = config.get("petlibro_device_name", "Petlibro Feeder")
+    name: str = config.get("petlibro_device_name", f"Petlibro {device_type.title()}")
 
     if not sn:
         _LOGGER.error("No serial number provided in config entry")
         return False
 
     try:
-        # Create feeder instance
-        feeder = PLAF301(hass, sn, name)
+        # Create device instance based on type
+        if device_type == "feeder":
+            device = PLAF301(hass, sn, name)
+            platforms = FEEDER_PLATFORMS
+        elif device_type == "fountain":
+            device = PLWF116(hass, sn, name)
+            platforms = FOUNTAIN_PLATFORMS
+        else:
+            _LOGGER.error("Unknown device type: %s", device_type)
+            return False
 
         # Start MQTT subscriptions and get device info
-        await feeder.start()
+        await device.start()
 
-        # Create coordinator
-        coordinator: PetlibroCoordinator = PetlibroCoordinator(hass, entry, feeder)
+        # Create coordinator for this device
+        coordinator: PetlibroCoordinator = PetlibroCoordinator(hass, entry, device)
 
-        # Store coordinator in runtime data
-        entry.runtime_data: PetlibroCoordinator = coordinator  # type: ignore
+        # Store coordinator and device in runtime data
+        entry.runtime_data = {
+            "coordinator": coordinator,
+            "device": device,
+            "device_type": device_type,
+        }
 
         entry.async_on_unload(entry.add_update_listener(async_options_updated))
 
         # Perform initial data fetch
         await coordinator.async_config_entry_first_refresh()
 
-        # Forward setup to platforms
-        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        # Forward setup to appropriate platforms
+        await hass.config_entries.async_forward_entry_setups(entry, platforms)
 
-        _LOGGER.info("Successfully set up Petlibro device: %s", name)
+        _LOGGER.info("Successfully set up Petlibro device: %s (%s)", name, sn)
         return True
 
     except Exception as err:
@@ -89,30 +114,99 @@ async def async_options_updated(
         hass: Home Assistant instance
         entry: Config entry
     """
-    coordinator: PetlibroCoordinator = entry.runtime_data
+    runtime_data = entry.runtime_data
+    coordinator: PetlibroCoordinator = runtime_data["coordinator"]
+    device_type: str = runtime_data["device_type"]
+
+    # Only process feeding schedules for feeders
+    if device_type != "feeder":
+        _LOGGER.debug("Skipping schedule update for non-feeder device")
+        return
+
     feeding_plan = FEEDING_PLAN_SERVICE()
     feeding_schedules = entry.options.get("feeding_schedules", [])
-    for schedule in feeding_schedules:
-        time = ":".join(schedule["time"].split(":")[:2])
-        hours, minutes = map(int, time.split(":"))
 
-        # Convert local time to UTC by subtracting timezone offset
-        utc_hours = (hours - int(TZ_OFFSET)) % 24
-        utc_time_str = f"{utc_hours:02d}:{minutes:02d}"
-        food_plan = FoodPlan(
-            grainNum=schedule["portions"],
-            executionTime=utc_time_str,
-            planId=schedule.get("planId"),
-        )
-        feeding_plan.add_plan(food_plan)
+    _LOGGER.debug("Processing %d feeding schedules", len(feeding_schedules))
 
-    _LOGGER.debug("Updating feeding plan with schedules: %s", feeding_plan.to_dict())
+    for idx, schedule in enumerate(feeding_schedules):
+        # Validate schedule has required fields
+        if "time" not in schedule or "portions" not in schedule:
+            _LOGGER.warning("Skipping invalid schedule %d: %s", idx, schedule)
+            continue
+
+        time_str = schedule["time"]
+        portions = schedule.get("portions", 1)
+
+        # Validate portions
+        if portions is None or portions == 0:
+            _LOGGER.warning(
+                "Schedule %d has invalid portions (%s), defaulting to 1",
+                idx,
+                portions,
+            )
+            portions = 1
+
+        # Validate time format
+        if not isinstance(time_str, str) or ":" not in time_str:
+            _LOGGER.warning("Schedule %d has invalid time format: %s", idx, time_str)
+            continue
+
+        try:
+            # Extract hours and minutes (handle HH:MM:SS or HH:MM format)
+            time_parts = time_str.split(":")
+            hours = int(time_parts[0])
+            minutes = int(time_parts[1])
+
+            # Validate time values
+            if not (0 <= hours < 24 and 0 <= minutes < 60):  # noqa: PLR2004
+                _LOGGER.warning(
+                    "Schedule %d has invalid time values: %02d:%02d",
+                    idx,
+                    hours,
+                    minutes,
+                )
+                continue
+
+            # Convert local time to UTC by subtracting timezone offset
+            utc_hours = (hours - int(TZ_OFFSET)) % 24
+            utc_time_str = f"{utc_hours:02d}:{minutes:02d}"
+
+            # Get planId if it exists (for updates), otherwise None (new plan)
+            plan_id = schedule.get("planId")
+
+            food_plan = FoodPlan(
+                grainNum=portions,
+                executionTime=utc_time_str,
+                planId=plan_id,
+            )
+            feeding_plan.add_plan(food_plan)
+
+            _LOGGER.debug(
+                "Added plan %d: local=%s, utc=%s, portions=%d, planId=%s",
+                idx,
+                time_str,
+                utc_time_str,
+                portions,
+                plan_id,
+            )
+
+        except (ValueError, IndexError) as e:
+            _LOGGER.warning("Error processing schedule %d (%s): %s", idx, schedule, e)
+            continue
+
+    _LOGGER.debug(
+        "Updating feeding plan with %d schedules: %s",
+        len(feeding_plan.plans),
+        feeding_plan.to_dict(),
+    )
 
     if feeding_schedules:
         await coordinator.feeder.update_feeding_plan_service(feeding_plan)
 
         # Request refresh to get updated state
         await coordinator.async_request_refresh()
+    else:
+        _LOGGER.info("No feeding schedules to update")
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -125,11 +219,25 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     Returns:
         True if unload was successful
     """
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    runtime_data = entry.runtime_data
+    device_type: str = runtime_data["device_type"]
+
+    # Determine platforms to unload
+    if device_type == "feeder":
+        platforms = FEEDER_PLATFORMS
+    elif device_type == "fountain":
+        platforms = FOUNTAIN_PLATFORMS
+    else:
+        platforms = []
+
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, platforms)
 
     if unload_ok:
-        coordinator: PetlibroCoordinator = entry.runtime_data
-        await coordinator.feeder.cleanup()
+        device = runtime_data["device"]
+
+        # Clean up device
+        await device.cleanup()
+
         _LOGGER.info("Successfully unloaded Petlibro integration")
 
     return unload_ok

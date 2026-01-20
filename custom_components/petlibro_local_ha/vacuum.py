@@ -12,11 +12,10 @@ from homeassistant.components.vacuum import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import _LOGGER, DOMAIN, TZ
+from .shared_const import _LOGGER, DOMAIN, TZ
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
-    from homeassistant.core import HomeAssistant
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
     from .coordinator import PetlibroCoordinator
@@ -34,10 +33,12 @@ async def async_setup_entry(
         entry: Config entry
         async_add_entities: Callback to add entities
     """
-    coordinator: PetlibroCoordinator = entry.runtime_data
+    runtime_data = entry.runtime_data
+    coordinator: PetlibroCoordinator = runtime_data["coordinator"]
+    device = runtime_data["device"]
 
     async_add_entities(
-        [PetlibroVacuumEntity(coordinator, entry)],
+        [PetlibroVacuumEntity(coordinator, entry, device)],
         update_before_add=True,
     )
 
@@ -50,7 +51,6 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
         | VacuumEntityFeature.STATE
         | VacuumEntityFeature.BATTERY
         | VacuumEntityFeature.STATUS
-        # | VacuumEntityFeature.RETURN_HOME
     )
     _attr_has_entity_name = True
 
@@ -58,38 +58,22 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
         self,
         coordinator: PetlibroCoordinator,
         entry: ConfigEntry,
+        device,
     ) -> None:
         """Initialize the vacuum entity.
 
         Args:
             coordinator: Data coordinator
             entry: Config entry
+            device: Device instance
         """
         super().__init__(coordinator)
 
+        self._device = device
         self._attr_unique_id = f"{entry.data['petlibro_serial_number']}_vacuum"
         self._attr_name = "Feeder"
 
         self.coordinator: PetlibroCoordinator = coordinator
-        self._feeder = coordinator.feeder
-
-        # Extract feed plans from entry options, assuming an unordered dictionary
-        plans: dict[int, dict[str, int]] = {}
-        for key in entry.options:
-            if key.startswith("feed_"):
-                if "portions" in key:
-                    plans[int(key.split("_")[1])]["portions"] = entry.options[key]
-                elif "time" in key:
-                    plans[int(key.split("_")[1])]["time"] = entry.options[key]
-
-        for item in plans:
-            self._feeder.add_feeding_plan(
-                item,
-                executionTime=plans[item]["time"],
-                grainNum=plans[item]["portions"],
-            )
-
-        self._feeder.hass.async_create_task(self.coordinator.async_request_refresh())
 
     @property
     def available(self) -> bool:
@@ -103,13 +87,13 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
     def device_info(self) -> dict[str, Any]:
         """Return device information for device registry."""
         return {
-            "identifiers": {(DOMAIN, self._feeder.serial_number)},
-            "name": self._attr_name,
-            "manufacturer": self._feeder.manufacturer,
-            "model": self._feeder.model,
+            "identifiers": {(DOMAIN, self._device.serial_number)},
+            "name": self._device.name,
+            "manufacturer": self._device.manufacturer,
+            "model": self._device.model,
             "sw_version": (
-                self._feeder._startup_info.softwareVersion
-                if self._feeder._startup_info.softwareVersion
+                self._device._startup_info.softwareVersion
+                if self._device._startup_info.softwareVersion
                 else None
             ),
         }
@@ -159,7 +143,7 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
 
         return {
             "door_open": self.coordinator.data.get("is_door_open", False),
-            "door_status": door_status,  # <-- ADD THIS
+            "door_status": door_status,
             "dispensing": self.coordinator.data.get("is_dispensing", False),
             "empty": self.coordinator.data.get("is_empty", False),
             "clogged": self.coordinator.data.get("is_clogged", False),
@@ -175,14 +159,8 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
     async def async_start(self) -> None:
         """Start the vacuum (dispense food)."""
         _LOGGER.info("Starting vacuum (dispensing food)")
-        await self._feeder.dispense_food(1)
+        await self._device.dispense_food(1)
         await self.coordinator.async_request_refresh()
-
-    # async def async_return_to_base(self, **kwargs: Any) -> None:
-    #     """Return to base (toggle door)."""
-    #     _LOGGER.info("Returning to base (toggling door)")
-    #     await self._feeder.toggle_door()
-    #     await self.coordinator.async_request_refresh()
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
