@@ -1,54 +1,28 @@
-"""PLWF116 Petlibro feeder device handler."""
+"""PLWF116 Petlibro water fountain device handler."""
 
 from __future__ import annotations
 
-import asyncio
-import json
-import time
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.components import mqtt
-from homeassistant.core import callback
-
-from .message_data import (
-    ATTR_PUSH_EVENT,
-    ATTR_SET_SERVICE,
-    DEVICE_FEEDING_PLAN_SERVICE,
-    DEVICE_START_EVENT,
-    FEEDING_PLAN_SERVICE,
-    HEARTBEAT,
-    MANUAL_FEEDING_SERVICE,
-    NTP,
-    NTP_SYNC,
-    FoodPlan,
-)
+from .ha_petlibro_base import PetlibroDeviceBase
 from .plwf116_const import (
-    ERROR_CLOGGED,
-    ERROR_EMPTY,
+    ERROR_FILTER_REPLACE,
+    ERROR_LOW_WATER,
     ERROR_NONE,
     ERROR_UNKNOWN,
-    FeederState,
+    WaterFountainState,
 )
 from .shared_const import (
     _LOGGER,
-    MANUFACTURER,
     MODEL_PLWF116,
-    TOPIC_DEVICE_CONTROL,
-    TOPIC_DEVICE_CONTROL_IN,
-    TOPIC_DEVICE_EVENT,
-    TOPIC_DEVICE_HEARTBEAT,
 )
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
-    from paho.mqtt.client import MQTTMessage
 
 
-class PLWF116:
+class PLWF116(PetlibroDeviceBase):
     """MQTT-enabled Petlibro PLWF116 water fountain."""
-
-    HEARTBEAT_TIMEOUT = 300
-    """The maximum allowed time (in seconds) between heartbeats before considering the device offline."""
 
     def __init__(
         self,
@@ -56,174 +30,70 @@ class PLWF116:
         serial_number: str,
         name: str,
     ) -> None:
-        """Initialize the feeder.
+        """Initialize the water fountain.
 
         Args:
             hass: Home Assistant instance
             serial_number: Device serial number
             name: Friendly name for the device
         """
-        self.hass = hass
-        self._sn = serial_number.upper()
-        self._name = name
-        self._model = MODEL_PLWF116
+        super().__init__(hass, serial_number, name, MODEL_PLWF116)
 
-        # State tracking
-        self._current_state: ATTR_PUSH_EVENT = ATTR_PUSH_EVENT()
-        self._startup_info: DEVICE_START_EVENT = DEVICE_START_EVENT()
-        self._heartbeat: HEARTBEAT = HEARTBEAT()
-        self._schedule: FEEDING_PLAN_SERVICE = FEEDING_PLAN_SERVICE()
+        # Water fountain-specific state tracking
+        self._pump_running = False
+        self._filter_life = 100  # Percentage
+        self._water_level = 100  # Percentage
 
-        self._is_dispensing = False
-        self._last_heartbeat: float = 0
-        self._last_heartbeat_time: float = time.time()
-
-        # Add door transition tracking
-        self._door_is_opening = False  # <-- ADD THIS
-        self._door_is_closing = False  # <-- ADD THIS
-        self._door_transition_timer = None  # <-- ADD THIS
-
-        # MQTT unsubscribe functions
-        self._unsub_funcs: list = []
-
-        # Callback for state changes
-        self._state_change_callback: callable | None = None
-
-    def set_state_change_callback(self, callback: callable) -> None:
-        """Set callback to be called when state changes.
-
-        Args:
-            callback: Function to call on state change
-        """
-        self._state_change_callback = callback
+    # ==================== Water Fountain-Specific Properties ====================
 
     @property
-    def serial_number(self) -> str:
-        """Return device serial number."""
-        return self._sn
+    def is_pump_running(self) -> bool:
+        """Check if the pump is currently running."""
+        return self._pump_running
 
     @property
-    def name(self) -> str:
-        """Return device name."""
-        return self._name
+    def water_level(self) -> int:
+        """Get water level percentage (0-100)."""
+        return self._water_level
 
     @property
-    def model(self) -> str:
-        """Return device model."""
-        return self._model
+    def filter_life(self) -> int:
+        """Get filter life percentage (0-100)."""
+        return self._filter_life
 
     @property
-    def manufacturer(self) -> str:
-        """Return device manufacturer."""
-        return MANUFACTURER
-
-    # MQTT Topics
-    def _get_topic(self, topic_template: str) -> str:
-        """Format topic with model and serial number."""
-        return topic_template.format(model=self._model, sn=self._sn)
+    def is_low_water(self) -> bool:
+        """Check if water level is low."""
+        return self._water_level < 20
 
     @property
-    def event_topic(self) -> str:
-        """Topic for receiving events."""
-        return self._get_topic(TOPIC_DEVICE_EVENT)
+    def needs_filter_change(self) -> bool:
+        """Check if filter needs replacement."""
+        return self._filter_life < 10
 
     @property
-    def control_topic(self) -> str:
-        """Topic for sending control commands."""
-        return self._get_topic(TOPIC_DEVICE_CONTROL)
-
-    @property
-    def control_in_topic(self) -> str:
-        """Topic for receiving control responses."""
-        return self._get_topic(TOPIC_DEVICE_CONTROL_IN)
-
-    @property
-    def heartbeat_topic(self) -> str:
-        """Topic for receiving heartbeat messages."""
-        return self._get_topic(TOPIC_DEVICE_HEARTBEAT)
-
-    # State Properties
-    @property
-    def is_door_open(self) -> bool:
-        """Check if the barn door is open."""
-        return self._current_state.barnDoorState or False
-
-    @property
-    def is_door_opening(self) -> bool:
-        """Check if door is currently opening."""
-        return self._door_is_opening
-
-    @property
-    def is_door_closing(self) -> bool:
-        """Check if door is currently closing."""
-        return self._door_is_closing
-
-    @property
-    def is_clogged(self) -> bool:
-        """Check if the grain outlet is clogged."""
-        return not self._current_state.grainOutletState
-
-    @property
-    def is_dispensing(self) -> bool:
-        """Check if currently dispensing food."""
-        return self._is_dispensing
-
-    @property
-    def is_empty(self) -> bool:
-        """Check if grain storage is empty."""
-        return not self._current_state.surplusGrain
-
-    @property
-    def is_online(self) -> bool:
-        """Check if device is online based on heartbeat."""
-        if self._last_heartbeat_time == 0:
-            return False
-
-        time_since_heartbeat = time.time() - self._last_heartbeat_time
-        return time_since_heartbeat < self.HEARTBEAT_TIMEOUT
-
-    @property
-    def last_seen(self) -> float:
-        """Return timestamp of last heartbeat."""
-        return self._last_heartbeat_time
-
-    @property
-    def seconds_since_last_heartbeat(self) -> int:
-        """Return seconds since last heartbeat."""
-        if self._last_heartbeat_time == 0:
-            return -1
-        return int(time.time() - self._last_heartbeat_time)
-
-    @property
-    def current_state(self) -> FeederState:
+    def current_state(self) -> WaterFountainState:
         """Get the current state of the device."""
-        if self.is_empty:
-            return FeederState.ERROR
-        if self.is_clogged:
-            return FeederState.ERROR
-        if self.is_dispensing:
-            return FeederState.DISPENSING
-        if self.is_door_open:
-            return FeederState.DOOR_OPEN
-        if not self.is_door_open:
-            return FeederState.DOOR_CLOSED
-        return FeederState.UNKNOWN
+        if self.is_low_water:
+            return WaterFountainState.ERROR
+        if self.needs_filter_change:
+            return WaterFountainState.WARNING
+        if self.is_pump_running:
+            return WaterFountainState.RUNNING
+        return WaterFountainState.IDLE
 
     @property
     def error_code(self) -> str:
         """Get current error code."""
-        if self.is_empty:
-            return ERROR_EMPTY
-        if self.is_clogged:
-            return ERROR_CLOGGED
-        if self.current_state == FeederState.ERROR:
+        if self.is_low_water:
+            return ERROR_LOW_WATER
+        if self.needs_filter_change:
+            return ERROR_FILTER_REPLACE
+        if self.current_state == WaterFountainState.ERROR:
             return ERROR_UNKNOWN
         return ERROR_NONE
 
-    @property
-    def feeding_schedule(self) -> dict[str, Any]:
-        """Get the current feeding schedule."""
-        return self._schedule.to_dict()
+    # ==================== State Management ====================
 
     def get_state_dict(self) -> dict[str, Any]:
         """Get state as dictionary for coordinator.
@@ -233,13 +103,11 @@ class PLWF116:
         """
         return {
             "state": self.current_state,
-            "activity": self.current_state.to_ha_activity(),
-            "is_door_open": self.is_door_open,
-            "is_door_opening": self.is_door_opening,  # <-- ADD THIS
-            "is_door_closing": self.is_door_closing,  # <-- ADD THIS
-            "is_dispensing": self.is_dispensing,
-            "is_empty": self.is_empty,
-            "is_clogged": self.is_clogged,
+            "is_pump_running": self.is_pump_running,
+            "water_level": self.water_level,
+            "filter_life": self.filter_life,
+            "is_low_water": self.is_low_water,
+            "needs_filter_change": self.needs_filter_change,
             "error_code": self.error_code,
             "rssi": self._heartbeat.rssi,
             "is_online": self.is_online,
@@ -247,351 +115,99 @@ class PLWF116:
             "seconds_since_heartbeat": self.seconds_since_last_heartbeat,
         }
 
-    def add_feeding_plan(
-        self,
-        id,
-        time: int,
-        amount: int,
-    ) -> None:
-        """Add a feeding plan to the device."""
-        tmp = FoodPlan(
-            grainNum=amount,
-            executionTime=time,
-            planId=id,
-        )
-        self._schedule.add_plan(tmp)
+    # ==================== Event Handlers ====================
 
-    async def start(self) -> None:
-        """Start the device handler and subscribe to MQTT topics."""
-        _LOGGER.info("Starting PLAF301 device: %s", self._sn)
-
-        try:
-            # Subscribe to event topic
-            unsub = await mqtt.async_subscribe(
-                self.hass,
-                self.event_topic,
-                self._handle_event_message,
-                encoding="utf-8",
-            )
-            self._unsub_funcs.append(unsub)
-
-            # Subscribe to heartbeat topic
-            unsub = await mqtt.async_subscribe(
-                self.hass,
-                self.heartbeat_topic,
-                self._handle_heartbeat_message,
-                encoding="utf-8",
-            )
-            self._unsub_funcs.append(unsub)
-
-            # Subscribe to control response topic
-            unsub = await mqtt.async_subscribe(
-                self.hass,
-                self.control_in_topic,
-                self._handle_control_response,
-                encoding="utf-8",
-            )
-            self._unsub_funcs.append(unsub)
-
-            # Sync time with device
-            await self.sync_time()
-
-            # Request feeding schedule
-            await self.request_feeding_schedule()
-
-            _LOGGER.info("Successfully started PLAF301 device: %s", self._sn)
-
-        except Exception as err:
-            _LOGGER.exception("Failed to start PLAF301 device: %s", err)
-            raise
-
-    async def cleanup(self) -> None:
-        """Clean up resources."""
-        _LOGGER.info("Cleaning up PLAF301 device: %s", self._sn)
-
-        # Cancel door transition timer if active
-        if self._door_transition_timer:
-            self._door_transition_timer.cancel()
-            self._door_transition_timer = None
-
-        # Unsubscribe from MQTT topics
-        for unsub in self._unsub_funcs:
-            unsub()
-        self._unsub_funcs.clear()
-
-    @callback
-    def _handle_event_message(self, msg: MQTTMessage) -> None:  # noqa: PLR0912, PLR0915
-        """Handle incoming event messages.
+    def _handle_device_specific_event(self, cmd: str, payload: dict) -> bool:
+        """Handle water fountain-specific event messages.
 
         Args:
-            msg: MQTT message received
+            cmd: Command name from the event
+            payload: Full event payload
+
+        Returns:
+            bool: True if event was handled and should trigger update
         """
-        try:
-            payload: dict = json.loads(msg.payload)
-            cmd = payload.get("cmd")
-            update: bool = True
+        if cmd == "PUMP_STATE_EVENT":
+            self._pump_running = payload.get("pumpRunning", False)
+            _LOGGER.debug("Pump running: %s", self._pump_running)
+            return True
 
-            if cmd == "ATTR_PUSH_EVENT":
-                self._current_state.from_mqtt_payload(payload)
-                _LOGGER.debug("Updated device attributes")
+        if cmd == "WATER_LEVEL_EVENT":
+            self._water_level = payload.get("waterLevel", 100)
+            _LOGGER.debug("Water level: %s%%", self._water_level)
+            return True
 
-            elif cmd == "DEVICE_START_EVENT":
-                self._startup_info.from_mqtt_payload(payload)
-                _LOGGER.info(
-                    "Device started: %s", self._startup_info.softwareVersion
-                )
+        if cmd == "FILTER_STATUS_EVENT":
+            self._filter_life = payload.get("filterLife", 100)
+            _LOGGER.debug("Filter life: %s%%", self._filter_life)
+            return True
 
-            elif cmd == "WAREHOUSE_DOOR_EVENT":
-                door_state = payload.get("barnDoorState", False)
-                trigger_type = payload.get("triggerType", "")
+        return False
 
-                _LOGGER.debug(
-                    "Door event: state=%s, trigger=%s, current_state=%s",
-                    door_state,
-                    trigger_type,
-                    self._current_state.barnDoorState,
-                )
-
-                # Determine if door is transitioning
-                old_state = self._current_state.barnDoorState
-                new_state = door_state
-
-                # Clear any existing transition timer
-                if self._door_transition_timer:
-                    self._door_transition_timer.cancel()
-                    self._door_transition_timer = None
-
-                if old_state != new_state:
-                    # Door state is changing
-                    if new_state:
-                        # Door is opening
-                        self._door_is_opening = True
-                        self._door_is_closing = False
-                        _LOGGER.debug("Door is opening")
-                    else:
-                        # Door is closing
-                        self._door_is_opening = False
-                        self._door_is_closing = True
-                        _LOGGER.debug("Door is closing")
-
-                    # Set a timer to clear the transition state after 5 seconds
-                    # (in case we don't get a final state update)
-                    self._door_transition_timer = self.hass.loop.call_later(
-                        5.0, self._clear_door_transition
-                    )
-                else:
-                    # Door has reached its final position
-                    self._door_is_opening = False
-                    self._door_is_closing = False
-                    _LOGGER.debug("Door reached final position")
-
-                self._current_state.barnDoorState = door_state
-                _LOGGER.debug("Door state changed: %s", door_state)
-
-            elif cmd == "GRAIN_OUTPUT_EVENT":
-                finished = payload.get("finished", True)
-                self._is_dispensing = not finished
-                _LOGGER.debug("Dispensing: %s", self._is_dispensing)
-
-            else:
-                _LOGGER.warning("Unknown event command: %s", cmd)
-                update = False
-
-            # Notify callback of state change
-            if self._state_change_callback and update:
-                _LOGGER.debug("Updating values from state change")
-                self.hass.async_create_task(self._state_change_callback())
-
-            else:
-                _LOGGER.warning("Unknown event command: %s", cmd)
-                update = False
-
-            # Notify callback of state change
-            if self._state_change_callback and update:
-                _LOGGER.debug("Updating values from state change")
-                self.hass.async_create_task(self._state_change_callback())
-
-        except Exception as err:
-            _LOGGER.exception("Error handling event message: %s", err)
-
-    def _clear_door_transition(self) -> None:
-        """Clear door transition flags (called by timer)."""
-        _LOGGER.debug("Clearing door transition state (timeout)")
-        self._door_is_opening = False
-        self._door_is_closing = False
-        self._door_transition_timer = None
-
-        # Notify callback of state change
-        if self._state_change_callback:
-            self.hass.async_create_task(self._state_change_callback())
-
-    @callback
-    def _handle_heartbeat_message(self, msg: MQTTMessage) -> None:
-        """Handle incoming heartbeat messages.
+    def _handle_device_specific_control_response(
+        self, cmd: str, payload: dict
+    ) -> bool:
+        """Handle water fountain-specific control responses.
 
         Args:
-            msg: MQTT message received
+            cmd: Command name from the response
+            payload: Full response payload
+
+        Returns:
+            bool: True if response was handled
         """
-        try:
-            payload: dict = json.loads(msg.payload)
-            self._last_heartbeat = payload.get("ts")
-            self._last_heartbeat_time = time.time()
-            self._heartbeat.from_mqtt_payload(payload)
-            _LOGGER.debug(
-                "Received heartbeat(%s): RSSI=%s",
-                self._heartbeat.ts,
-                self._heartbeat.rssi,
-            )
+        if cmd == "PUMP_CONTROL_RESPONSE":
+            _LOGGER.info("Pump control command acknowledged")
+            return True
 
-            # Trigger state update since device is online
-            if self._state_change_callback:
-                self.hass.async_create_task(self._state_change_callback())
+        if cmd == "FILTER_RESET_RESPONSE":
+            self._filter_life = 100
+            _LOGGER.info("Filter life reset to 100%%")
+            return True
 
-        except Exception as err:
-            _LOGGER.exception("Error handling heartbeat message: %s", err)
+        return False
 
-    @callback
-    def _handle_control_response(self, msg: MQTTMessage) -> None:
-        """Handle incoming control response messages.
+    # ==================== Lifecycle ====================
 
-        Args:
-            msg: MQTT message received
-        """
-        try:
-            payload: dict = json.loads(msg.payload)
-            cmd = payload.get("cmd")
+    async def _device_specific_start(self) -> None:
+        """Perform water fountain-specific initialization."""
+        # Request current water level and filter status
+        _LOGGER.debug("Water fountain initialization complete")
+        # TODO: Add specific initialization commands if needed
 
-            _LOGGER.info("Received control response: %s", payload)
-            if cmd == "DEVICE_FEEDING_PLAN_SERVICE":
-                self._schedule.from_mqtt_payload(payload)
-                _LOGGER.info(
-                    f"Updated feeding schedule {self._schedule.to_dict()}"
-                )
-            else:
-                _LOGGER.warning("Unknown control response: %s", cmd)
+    async def _device_specific_cleanup(self) -> None:
+        """Perform water fountain-specific cleanup."""
+        # No specific cleanup needed for water fountain
 
-        except Exception as err:
-            _LOGGER.exception("Error handling control response: %s", err)
+    # ==================== Water Fountain Commands ====================
 
-    async def _publish_command(self, message: MQTTMessage) -> None:
-        """Publish a command to the device.
+    async def start_pump(self) -> None:
+        """Start the water pump."""
+        _LOGGER.info("Starting water pump")
+        # TODO: Implement actual MQTT command based on device protocol
+        # await self._publish_command(PUMP_CONTROL_SERVICE(running=True))
+        self._pump_running = True
+        await self._notify_state_change()
 
-        Args:
-            message: Message object to publish
-        """
-        try:
-            payload = message.to_mqtt_payload()
-            await mqtt.async_publish(
-                self.hass,
-                self.control_topic,
-                payload,
-                qos=1,
-            )
-            _LOGGER.debug(
-                "Published command: %s to topic %s",
-                message.cmd,
-                self.control_topic,
-            )
+    async def stop_pump(self) -> None:
+        """Stop the water pump."""
+        _LOGGER.info("Stopping water pump")
+        # TODO: Implement actual MQTT command based on device protocol
+        # await self._publish_command(PUMP_CONTROL_SERVICE(running=False))
+        self._pump_running = False
+        await self._notify_state_change()
 
-        except Exception as err:
-            _LOGGER.exception("Error publishing command: %s", err)
-            raise
-
-    async def sync_time(self) -> None:
-        """Synchronize time with the device."""
-        _LOGGER.debug("Syncing time with device")
-        # tmp = self._current_state.ts
-        await self._publish_command(NTP_SYNC())
-        # while self._current_state.ts == tmp:
-        await asyncio.sleep(0.3)
-        #     _LOGGER.debug("NTP New TS %s, saved %s", self._schedule.ts, tmp)
-        # _LOGGER.debug("Feeding Plan update done")
-
-    async def request_feeding_schedule(self) -> None:
-        """Request the current feeding schedule from the device."""
-        _LOGGER.debug("Requesting feeding plan update")
-        tmp = self._schedule.ts
-        await self._publish_command(DEVICE_FEEDING_PLAN_SERVICE())
-        while self._schedule.ts == tmp:
-            await asyncio.sleep(0.3)
-            await self._publish_command(DEVICE_FEEDING_PLAN_SERVICE())
-        _LOGGER.debug("Feeding Plan update done")
-
-    async def request_state_update(self) -> None:
-        """Request current state from the device."""
-        _LOGGER.debug("Requesting state update")
-        tmp = self._heartbeat.ts
-        await self._publish_command(NTP())
-        while self._heartbeat.ts == tmp:
-            await asyncio.sleep(0.1)
-        _LOGGER.debug("State update done")
-
-    async def open_door(self) -> None:
-        """Open the barn door."""
-        _LOGGER.info("Opening barn door")
-        self._door_is_opening = True
-        self._door_is_closing = False
-        await self._publish_command(ATTR_SET_SERVICE(coverOpen=True))
-
-        # Notify callback of state change
-        if self._state_change_callback:
-            await self._state_change_callback()
-
-    async def close_door(self) -> None:
-        """Close the barn door."""
-        _LOGGER.info("Closing barn door")
-        self._door_is_closing = True
-        self._door_is_opening = False
-        await self._publish_command(ATTR_SET_SERVICE(coverOpen=False))
-
-        # Notify callback of state change
-        if self._state_change_callback:
-            await self._state_change_callback()
-
-    async def toggle_door(self) -> None:
-        """Toggle the barn door state."""
-        if self.is_door_open:
-            await self.close_door()
+    async def toggle_pump(self) -> None:
+        """Toggle the pump state."""
+        if self.is_pump_running:
+            await self.stop_pump()
         else:
-            await self.open_door()
+            await self.start_pump()
 
-    async def dispense_food(self, amount: int = 1) -> None:
-        """Dispense food.
-
-        Args:
-            amount: Number of portions to dispense (default: 1)
-        """
-        if amount < 1:
-            _LOGGER.warning("Invalid dispense amount: %s", amount)
-            return
-
-        _LOGGER.info("Dispensing %s portion(s)", amount)
-        msg = MANUAL_FEEDING_SERVICE()
-        msg.grainNum = amount
-        await self._publish_command(msg)
-
-    async def update_feeding_plan_service(
-        self, feeding_plan: FEEDING_PLAN_SERVICE
-    ) -> None:
-        """Update and publish the feeding plan on the device.
-
-        Args:
-            feeding_plan: Feeding plan to set
-        """
-        _LOGGER.debug(
-            f"Setting feeding plan on device from {self._schedule.to_dict()}"
-        )
-        self._schedule.plans = []
-        for idx, plan in enumerate(feeding_plan.plans, start=1):
-            # Ensure plan has proper ID
-            if plan.planId is None:
-                plan.planId = idx
-            _LOGGER.debug(f"    adding plan: {plan.to_dict()}")
-            self._schedule.plans.append(plan)
-        # for plan in feeding_plan.plans:
-        #     _LOGGER.debug(f"    new plan: {plan.to_dict()}")
-        #     self._schedule.update_plan(plan)
-        # _LOGGER.debug(f"Updated schedule: {self._schedule.to_dict()}")
-        tmp = self._schedule
-        # tmp.cmd = "DEVICE_FEEDING_PLAN_SERVICE"
-        await self._publish_command(tmp)
+    async def reset_filter_life(self) -> None:
+        """Reset filter life indicator (after replacing filter)."""
+        _LOGGER.info("Resetting filter life indicator")
+        # TODO: Implement actual MQTT command based on device protocol
+        # await self._publish_command(FILTER_RESET_SERVICE())
+        self._filter_life = 100
+        await self._notify_state_change()

@@ -1,7 +1,7 @@
 {
     "domain": "petlibro_local_ha",
     "name": "Petlibro Local",
-    "version": "1.1.0",
+    "version": "2.0.0",
     "documentation": "https://github.com/gregmolskow/petlibro_local_ha",
     "issue_tracker": "https://github.com/gregmolskow/petlibro_local_ha/issues",
     "requirements": [

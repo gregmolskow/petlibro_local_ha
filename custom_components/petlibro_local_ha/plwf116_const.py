@@ -1,39 +1,27 @@
-"""Constants for the Petlibro MQTT Home Assistant integration."""
+"""Constants for the Petlibro PLWF116 water fountain."""
 
 from __future__ import annotations
 
 from enum import Enum
 
-from homeassistant.components.vacuum import VacuumActivity
 
+class WaterFountainState(Enum):
+    """Enum for the different states of the PLWF116 water fountain."""
 
-class FeederState(Enum):
-    """Enum for the different states of the PLAF301 cat feeder."""
-
-    DISPENSING = 0
-    ERROR = 1
-    DOOR_CLOSED = 2
-    DOOR_OPEN = 3
+    RUNNING = 0
+    IDLE = 1
+    WARNING = 2
+    ERROR = 3
     UNKNOWN = 4
 
-    def to_ha_activity(self) -> VacuumActivity:
-        """Convert feeder state to Home Assistant VacuumActivity.
-
-        Returns:
-            VacuumActivity: Corresponding HA vacuum activity state
-        """
-        state_mapping = {
-            FeederState.DISPENSING: VacuumActivity.CLEANING,
-            FeederState.ERROR: VacuumActivity.ERROR,
-            FeederState.DOOR_CLOSED: VacuumActivity.IDLE,
-            FeederState.DOOR_OPEN: VacuumActivity.DOCKED,
-            FeederState.UNKNOWN: VacuumActivity.ERROR,
-        }
-        return state_mapping.get(self, VacuumActivity.ERROR)
+    def __str__(self) -> str:
+        """Return string representation."""
+        return self.name.lower()
 
 
 # Error codes
-ERROR_EMPTY = "empty"
-ERROR_CLOGGED = "clogged"
+ERROR_LOW_WATER = "low_water"
+ERROR_FILTER_REPLACE = "filter_replace"
+ERROR_PUMP_FAULT = "pump_fault"
 ERROR_UNKNOWN = "unknown"
 ERROR_NONE = "none"

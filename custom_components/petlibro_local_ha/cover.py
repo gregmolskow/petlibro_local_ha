@@ -22,10 +22,12 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Petlibro cover from a config entry."""
-    coordinator: PetlibroCoordinator = entry.runtime_data
+    runtime_data = entry.runtime_data
+    coordinator: PetlibroCoordinator = runtime_data["coordinator"]
+    device = runtime_data["device"]
 
     async_add_entities(
-        [PLAF301CoverEntity(coordinator, entry)],
+        [PLAF301CoverEntity(coordinator, entry, device)],
         update_before_add=True,
     )
 
@@ -44,20 +46,21 @@ class PLAF301CoverEntity(CoordinatorEntity, CoverEntity):
         self,
         coordinator: PetlibroCoordinator,
         entry: ConfigEntry,
+        device,
     ) -> None:
         """Initialize the cover entity."""
         super().__init__(coordinator)
+        self._device = device
         self._attr_unique_id = f"{entry.data['petlibro_serial_number']}_cover"
-        self._feeder = coordinator.feeder
 
     @property
     def device_info(self) -> dict[str, Any]:
         """Return device information."""
         return {
-            "identifiers": {(DOMAIN, self._feeder.serial_number)},
-            "name": self._feeder.name,
-            "manufacturer": self._feeder.manufacturer,
-            "model": self._feeder.model,
+            "identifiers": {(DOMAIN, self._device.serial_number)},
+            "name": self._device.name,
+            "manufacturer": self._device.manufacturer,
+            "model": self._device.model,
         }
 
     @property
@@ -73,18 +76,14 @@ class PLAF301CoverEntity(CoordinatorEntity, CoverEntity):
         """Return if the cover is opening."""
         if not self.coordinator.data:
             return False
-        return self.coordinator.data.get(
-            "is_door_opening", False
-        )  # <-- USE NEW STATE
+        return self.coordinator.data.get("is_door_opening", False)
 
     @property
     def is_closing(self) -> bool:
         """Return if the cover is closing."""
         if not self.coordinator.data:
             return False
-        return self.coordinator.data.get(
-            "is_door_closing", False
-        )  # <-- USE NEW STATE
+        return self.coordinator.data.get("is_door_closing", False)
 
     @property
     def available(self) -> bool:
@@ -107,13 +106,13 @@ class PLAF301CoverEntity(CoordinatorEntity, CoverEntity):
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open the cover (barn door)."""
         _LOGGER.info("Opening barn door")
-        await self._feeder.open_door()
+        await self._device.open_door()
         # Request immediate refresh to show opening state
         await self.coordinator.async_request_refresh()
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         """Close the cover (barn door)."""
         _LOGGER.info("Closing barn door")
-        await self._feeder.close_door()
+        await self._device.close_door()
         # Request immediate refresh to show closing state
         await self.coordinator.async_request_refresh()
