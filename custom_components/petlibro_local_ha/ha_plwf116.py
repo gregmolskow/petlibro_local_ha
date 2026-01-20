@@ -171,7 +171,7 @@ class PLWF116(PetlibroDeviceBase):
 
     # ==================== Lifecycle ====================
 
-    async def _device_specific_start(self) -> None:  # noqa: PLR6301
+    async def _device_specific_start(self) -> None:
         """Perform water fountain-specific initialization."""
         # Request current water level and filter status
         _LOGGER.debug("Water fountain initialization complete")
