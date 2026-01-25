@@ -104,6 +104,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady from err
 
 
+def _schedules_are_equal(current: list, new: list) -> bool:
+    """Check if two schedule lists are equivalent."""
+    if len(current) != len(new):
+        return False
+
+    # Convert to comparable format (UTC time + portions)
+    def normalize_schedule(sched):
+        if isinstance(sched, dict):
+            time_str = sched.get("time", "")
+            portions = sched.get("portions", 1)
+            execution_time = sched.get("executionTime", "")
+        else:
+            execution_time = getattr(sched, "executionTime", "")
+            portions = getattr(sched, "grainNum", 1)
+            time_str = ""
+
+        return (execution_time or time_str, portions)
+
+    current_normalized = sorted([normalize_schedule(s) for s in current])
+    new_normalized = sorted([normalize_schedule(s) for s in new])
+
+    return current_normalized == new_normalized
+
+
 async def async_options_updated(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -121,6 +145,15 @@ async def async_options_updated(
     # Only process feeding schedules for feeders
     if device_type != "feeder":
         _LOGGER.debug("Skipping schedule update for non-feeder device")
+        return
+
+    # Get current schedules from device
+    current_schedules = coordinator.feeder.feeding_schedule.get("plans", [])
+    new_schedules = entry.options.get("feeding_schedules", [])
+
+    # Compare schedules - only update if different
+    if _schedules_are_equal(current_schedules, new_schedules):
+        _LOGGER.debug("Feeding schedules unchanged, skipping update")
         return
 
     feeding_plan = FEEDING_PLAN_SERVICE()

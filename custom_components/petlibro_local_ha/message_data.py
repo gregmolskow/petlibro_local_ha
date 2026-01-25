@@ -6,9 +6,9 @@ by the Petlibro smart feeder integration.
 
 from __future__ import annotations
 
-import datetime
 import json
 from dataclasses import asdict, dataclass, field, is_dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from .shared_const import _LOGGER, TZ_OFFSET
@@ -170,7 +170,7 @@ class NTP_SYNC(PetlibroMessage):
     def __init__(self) -> None:
         """Set timestamp and timezone during initialization."""
         super().__init__()
-        now = datetime.datetime.now(datetime.UTC)
+        now = datetime.now(UTC)
         self.ts = now.timestamp() * 1000
 
         # Get local timezone offset
@@ -210,7 +210,7 @@ class FoodPlan(MQTTMessage):
     planId: int | None = None
     enableAudio: bool = False
     audioTimes: int = 0
-    syncTime: int = 0
+    syncTime: int = datetime.now().astimezone().timestamp() * 1000
 
 
 @dataclass

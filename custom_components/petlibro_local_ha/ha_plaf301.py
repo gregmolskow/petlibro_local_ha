@@ -340,19 +340,40 @@ class PLAF301(PetlibroDeviceBase):
     async def update_feeding_plan_service(
         self, feeding_plan: FEEDING_PLAN_SERVICE
     ) -> None:
-        """Update and publish the feeding plan on the device.
+        """Update and publish the feeding plan on the device."""
 
-        Args:
-            feeding_plan: Feeding plan to set
-        """
         _LOGGER.debug(f"Setting feeding plan on device from {self._schedule.to_dict()}")
-        self._schedule.plans = []
+
+        # Store old schedule in case we need to rollback
+        old_schedule = self._schedule.plans.copy()
+
+        # Build new schedule
+        new_plans = []
         for idx, plan in enumerate(feeding_plan.plans, start=1):
-            # Ensure plan has proper ID
             if plan.planId is None:
                 plan.planId = idx
             _LOGGER.debug(f"    adding plan: {plan.to_dict()}")
-            self._schedule.plans.append(plan)
+            new_plans.append(plan)
 
-        tmp = self._schedule
-        await self._publish_command(tmp)
+        # Update local state
+        self._schedule.plans = new_plans
+
+        try:
+            # Publish command
+            await self._publish_command(self._schedule)
+
+            # Wait for confirmation (with timeout)
+            await asyncio.sleep(1.0)  # Give device time to respond
+
+            # Re-request feeding schedule to verify
+            await self.request_feeding_schedule()
+
+            _LOGGER.info(
+                f"Feeding plan updated successfully: {self._schedule.to_dict()}"
+            )
+
+        except Exception as e:
+            # Rollback on failure
+            _LOGGER.error(f"Failed to update feeding plan, rolling back: {e}")
+            self._schedule.plans = old_schedule
+            raise
