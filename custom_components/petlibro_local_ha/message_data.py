@@ -6,9 +6,9 @@ by the Petlibro smart feeder integration.
 
 from __future__ import annotations
 
-import datetime
 import json
 from dataclasses import asdict, dataclass, field, is_dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from .shared_const import _LOGGER, TZ_OFFSET
@@ -41,7 +41,8 @@ class MQTTMessage:
             # Handle lists of dataclasses
             elif isinstance(value, list):
                 result[key] = [
-                    asdict(item) if is_dataclass(item) else item for item in value
+                    asdict(item) if is_dataclass(item) else item
+                    for item in value
                 ]
             else:
                 result[key] = value
@@ -170,7 +171,7 @@ class NTP_SYNC(PetlibroMessage):
     def __init__(self) -> None:
         """Set timestamp and timezone during initialization."""
         super().__init__()
-        now = datetime.datetime.now(datetime.UTC)
+        now = datetime.now(UTC)
         self.ts = now.timestamp() * 1000
 
         # Get local timezone offset
@@ -210,7 +211,7 @@ class FoodPlan(MQTTMessage):
     planId: int | None = None
     enableAudio: bool = False
     audioTimes: int = 0
-    syncTime: int = 0
+    syncTime: int = datetime.now().astimezone().timestamp() * 1000
 
 
 @dataclass
@@ -276,7 +277,9 @@ class FEEDING_PLAN_SERVICE(PetlibroMessage):
         msg = f"Plan with Time {plan.executionTime} not found in {self.plans}"
         raise IndexError(msg)
 
-    def from_mqtt_payload(self, payload: dict[str, Any]) -> FEEDING_PLAN_SERVICE:
+    def from_mqtt_payload(
+        self, payload: dict[str, Any]
+    ) -> FEEDING_PLAN_SERVICE:
         """Deserialize feeding plan service from payload.
 
         Args:
@@ -286,7 +289,9 @@ class FEEDING_PLAN_SERVICE(PetlibroMessage):
             Self with updated attributes
         """
         # Handle plans list specially
-        _LOGGER.debug("Deserializing FEEDING_PLAN_SERVICE from payload: %s", payload)
+        _LOGGER.debug(
+            "Deserializing FEEDING_PLAN_SERVICE from payload: %s", payload
+        )
         plans_data = payload.get("plans", [])
         if plans_data:
             self.plans = []
