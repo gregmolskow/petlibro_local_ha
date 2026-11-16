@@ -16,10 +16,8 @@ from .ha_plaf301 import FEEDING_PLAN_SERVICE, PLAF301, FoodPlan
 from .ha_plwf116 import PLWF116
 from .shared_const import (
     _LOGGER,
-    TZ_OFFSET,
-)
-from .shared_const import (
-    DOMAIN as DOMAIN,
+    DOMAIN,
+    local_time_to_utc,
 )
 
 if TYPE_CHECKING:
@@ -141,31 +139,52 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady from err
 
 
+def _normalize_schedule_for_comparison(
+    sched: dict | Any,
+) -> tuple[str, int, tuple[int, ...]]:
+    """Normalize schedule to (utc_execution_time, portions, repeat_day_tuple)."""
+    if isinstance(sched, dict):
+        portions = sched.get("portions", sched.get("grainNum", 1))
+        raw_days = sched.get("repeatDay") or [1, 2, 3, 4, 5, 6, 7]
+        if "executionTime" in sched and sched["executionTime"]:
+            utc_time = sched["executionTime"]
+            repeat_days = raw_days
+        elif "time" in sched and sched["time"]:
+            try:
+                utc_time, repeat_days = local_time_to_utc(
+                    sched["time"], raw_days
+                )
+            except Exception:
+                utc_time = sched["time"]
+                repeat_days = raw_days
+        else:
+            utc_time = ""
+            repeat_days = raw_days
+    else:
+        portions = getattr(sched, "grainNum", 1)
+        raw_days = getattr(sched, "repeatDay", None) or [1, 2, 3, 4, 5, 6, 7]
+        utc_time = getattr(sched, "executionTime", "")
+        repeat_days = raw_days
+
+    return (utc_time, portions or 1, tuple(sorted(repeat_days)))
+
+
 def _schedules_are_equal(current: list, new: list) -> bool:
     """Check if two schedule lists are equivalent."""
     if len(current) != len(new):
         return False
 
-    # Convert to comparable format (UTC time + portions)
-    def normalize_schedule(sched):
-        if isinstance(sched, dict):
-            time_str = sched.get("time", "")
-            portions = sched.get("portions", 1)
-            execution_time = sched.get("executionTime", "")
-        else:
-            execution_time = getattr(sched, "executionTime", "")
-            portions = getattr(sched, "grainNum", 1)
-            time_str = ""
-
-        return (execution_time or time_str, portions)
-
-    current_normalized = sorted([normalize_schedule(s) for s in current])
-    new_normalized = sorted([normalize_schedule(s) for s in new])
+    current_normalized = sorted(
+        [_normalize_schedule_for_comparison(s) for s in current]
+    )
+    new_normalized = sorted(
+        [_normalize_schedule_for_comparison(s) for s in new]
+    )
 
     return current_normalized == new_normalized
 
 
-async def async_options_updated(  # noqa: PLR0914
+async def async_options_updated(
     hass: HomeAssistant,
     entry: ConfigEntry,
 ) -> None:
@@ -194,11 +213,9 @@ async def async_options_updated(  # noqa: PLR0914
         return
 
     feeding_plan = FEEDING_PLAN_SERVICE()
-    feeding_schedules = entry.options.get("feeding_schedules", [])
+    _LOGGER.debug("Processing %d feeding schedules", len(new_schedules))
 
-    _LOGGER.debug("Processing %d feeding schedules", len(feeding_schedules))
-
-    for idx, schedule in enumerate(feeding_schedules):
+    for idx, schedule in enumerate(new_schedules):
         # Validate schedule has required fields
         if "time" not in schedule or "portions" not in schedule:
             _LOGGER.warning("Skipping invalid schedule %d: %s", idx, schedule)
@@ -206,6 +223,7 @@ async def async_options_updated(  # noqa: PLR0914
 
         time_str = schedule["time"]
         portions = schedule.get("portions", 1)
+        repeat_days = schedule.get("repeatDay") or [1, 2, 3, 4, 5, 6, 7]
 
         # Validate portions
         if portions is None or portions == 0:
@@ -216,32 +234,11 @@ async def async_options_updated(  # noqa: PLR0914
             )
             portions = 1
 
-        # Validate time format
-        if not isinstance(time_str, str) or ":" not in time_str:
-            _LOGGER.warning(
-                "Schedule %d has invalid time format: %s", idx, time_str
-            )
-            continue
-
         try:
-            # Extract hours and minutes (handle HH:MM:SS or HH:MM format)
-            time_parts = time_str.split(":")
-            hours = int(time_parts[0])
-            minutes = int(time_parts[1])
-
-            # Validate time values
-            if not (0 <= hours < 24 and 0 <= minutes < 60):  # noqa: PLR2004
-                _LOGGER.warning(
-                    "Schedule %d has invalid time values: %02d:%02d",
-                    idx,
-                    hours,
-                    minutes,
-                )
-                continue
-
-            # Convert local time to UTC by subtracting timezone offset
-            utc_hours = (hours - int(TZ_OFFSET)) % 24
-            utc_time_str = f"{utc_hours:02d}:{minutes:02d}"
+            # Convert local time to UTC and shift days if crossing midnight
+            utc_time_str, shifted_days = local_time_to_utc(
+                time_str, repeat_days
+            )
 
             # Get planId if it exists (for updates), otherwise None (new plan)
             plan_id = schedule.get("planId")
@@ -250,15 +247,17 @@ async def async_options_updated(  # noqa: PLR0914
                 grainNum=portions,
                 executionTime=utc_time_str,
                 planId=plan_id,
+                repeatDay=shifted_days,
             )
             feeding_plan.add_plan(food_plan)
 
             _LOGGER.debug(
-                "Added plan %d: local=%s, utc=%s, portions=%d, planId=%s",
+                "Added plan %d: local=%s, utc=%s, portions=%d, days=%s, planId=%s",
                 idx,
                 time_str,
                 utc_time_str,
                 portions,
+                shifted_days,
                 plan_id,
             )
 
@@ -274,13 +273,8 @@ async def async_options_updated(  # noqa: PLR0914
         feeding_plan.to_dict(),
     )
 
-    if feeding_schedules:
-        await coordinator.feeder.update_feeding_plan_service(feeding_plan)
-
-        # Request refresh to get updated state
-        await coordinator.async_request_refresh()
-    else:
-        _LOGGER.info("No feeding schedules to update")
+    await coordinator.feeder.update_feeding_plan_service(feeding_plan)
+    await coordinator.async_request_refresh()
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

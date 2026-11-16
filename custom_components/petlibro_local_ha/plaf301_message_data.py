@@ -98,11 +98,14 @@ class ATTR_SET_SERVICE(PetlibroMessage):
 class FoodPlan(MQTTMessage):
     """Single feeding plan."""
 
-    grainNum: int = 0
+    grainNum: int = 1
     executionTime: str = ""
     planId: int | None = None
     enableAudio: bool = False
     audioTimes: int = 0
+    repeatDay: list[int] = field(
+        default_factory=lambda: [1, 2, 3, 4, 5, 6, 7]
+    )
     syncTime: int = field(
         default_factory=lambda: int(
             datetime.now().astimezone().timestamp() * 1000
@@ -187,8 +190,8 @@ class FEEDING_PLAN_SERVICE(PetlibroMessage):
         _LOGGER.debug(
             "Deserializing FEEDING_PLAN_SERVICE from payload: %s", payload
         )
-        plans_data = payload.get("plans", [])
-        if plans_data:
+        plans_data = payload.get("plans")
+        if plans_data is not None:
             self.plans = []
             for plan_dict in plans_data:
                 plan = FoodPlan()

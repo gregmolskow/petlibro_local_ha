@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import callback
@@ -147,6 +148,8 @@ class PLAF301(PetlibroDeviceBase):
             "is_online": self.is_online,
             "last_seen": self.last_seen,
             "seconds_since_heartbeat": self.seconds_since_last_heartbeat,
+            "feeding_schedule": self.feeding_schedule,
+            "feeding_plans": self.feeding_schedule.get("plans", []),
         }
 
     # ==================== MQTT Message Handlers ====================
@@ -185,6 +188,37 @@ class PLAF301(PetlibroDeviceBase):
                 finished = payload.get("finished", True)
                 self._is_dispensing = not finished
                 _LOGGER.debug("Dispensing: %s", self._is_dispensing)
+
+                # Acknowledge grain output event on event/sub
+                ack_payload = {
+                    "cmd": "GRAIN_OUTPUT_EVENT",
+                    "ts": int(time.time() * 1000),
+                    "msgId": payload.get("msgId", ""),
+                    "code": 0,
+                    "execStep": payload.get("execStep", ""),
+                }
+                self.hass.async_create_task(
+                    self._publish_event_reply(ack_payload)
+                )
+
+            elif cmd == "GET_FEEDING_PLAN_EVENT":
+                _LOGGER.info(
+                    "Feeder requested feeding plans (GET_FEEDING_PLAN_EVENT)"
+                )
+                clean_plans = [
+                    p.to_dict() if hasattr(p, "to_dict") else p
+                    for p in self._schedule.plans
+                ]
+                reply_payload = {
+                    "cmd": "GET_FEEDING_PLAN_EVENT",
+                    "code": 0,
+                    "ts": int(time.time() * 1000),
+                    "msgId": payload.get("msgId", ""),
+                    "plans": clean_plans,
+                }
+                self.hass.async_create_task(
+                    self._publish_event_reply(reply_payload)
+                )
 
             else:
                 _LOGGER.warning("Unknown feeder event command: %s", cmd)
@@ -275,9 +309,21 @@ class PLAF301(PetlibroDeviceBase):
         Returns:
             bool: True if response was handled
         """
-        if cmd == "DEVICE_FEEDING_PLAN_SERVICE":
-            self._schedule.from_mqtt_payload(payload)
-            _LOGGER.info(f"Updated feeding schedule {self._schedule.to_dict()}")
+        if cmd in ("DEVICE_FEEDING_PLAN_SERVICE", "FEEDING_PLAN_SERVICE"):
+            code = payload.get("code", 0)
+            if code == 0:
+                self._schedule.from_mqtt_payload(payload)
+                _LOGGER.info(
+                    "Updated feeding schedule: %s", self._schedule.to_dict()
+                )
+            else:
+                _LOGGER.warning(
+                    "Feeding plan response error code: %s", code
+                )
+            return True
+
+        if cmd in ("MANUAL_FEEDING_SERVICE", "SWITCH_DOOR_SERVICE"):
+            _LOGGER.debug("%s ack received: code=%s", cmd, payload.get("code"))
             return True
 
         return False
@@ -345,8 +391,10 @@ class PLAF301(PetlibroDeviceBase):
     def add_feeding_plan(
         self,
         id: int,
-        time: int,
-        amount: int,
+        time: str | int,
+        amount: int = 1,
+        repeat_day: list[int] | None = None,
+        **kwargs: Any,
     ) -> None:
         """Add a feeding plan to the device.
 
@@ -354,11 +402,22 @@ class PLAF301(PetlibroDeviceBase):
             id: Plan ID
             time: Execution time
             amount: Number of grain portions
+            repeat_day: List of days (1=Mon..7=Sun)
+            **kwargs: Extra keyword arguments for compatibility
         """
+        if "executionTime" in kwargs:
+            time = kwargs["executionTime"]
+        if "grainNum" in kwargs:
+            amount = kwargs["grainNum"]
+
+        if repeat_day is None:
+            repeat_day = [1, 2, 3, 4, 5, 6, 7]
+
         tmp = FoodPlan(
             grainNum=amount,
             executionTime=str(time),
             planId=id,
+            repeatDay=repeat_day,
         )
         self._schedule.add_plan(tmp)
 
@@ -409,5 +468,6 @@ class PLAF301(PetlibroDeviceBase):
             _LOGGER.debug(f"    adding plan: {plan.to_dict()}")
             self._schedule.plans.append(plan)
 
-        tmp = self._schedule
-        await self._publish_command(tmp)
+        self._schedule.ts = int(time.time() * 1000)
+        self._schedule.msgId = f"{self._sn}_{int(time.time())}"
+        await self._publish_command(self._schedule)

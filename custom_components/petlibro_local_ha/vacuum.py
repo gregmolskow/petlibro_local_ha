@@ -12,6 +12,7 @@ from homeassistant.components.vacuum import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .ha_plaf301 import PLAF301
 from .shared_const import _LOGGER, DOMAIN, TZ
 
 if TYPE_CHECKING:
@@ -71,7 +72,7 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
         self._attr_name = "Feeder"
 
         self.coordinator: PetlibroCoordinator = coordinator
-        self._feeder = coordinator.feeder
+        self._feeder: PLAF301 = coordinator.feeder  # type: ignore
 
         # Extract feed plans from entry options, assuming an unordered dictionary
         plans: dict[int, dict[str, int]] = {}
@@ -87,8 +88,8 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
         for item in plans:
             self._feeder.add_feeding_plan(
                 item,
-                executionTime=plans[item]["time"],
-                grainNum=plans[item]["portions"],
+                time=plans[item]["time"],
+                amount=plans[item]["portions"],
             )
 
         self._feeder.hass.async_create_task(

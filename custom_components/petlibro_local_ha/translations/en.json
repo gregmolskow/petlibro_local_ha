@@ -87,5 +87,12 @@
                 }
             }
         }
+    },
+    "entity": {
+        "sensor": {
+            "next_meal": {
+                "name": "Next Scheduled Meal"
+            }
+        }
     }
 }

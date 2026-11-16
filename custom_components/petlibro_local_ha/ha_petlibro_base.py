@@ -23,6 +23,7 @@ from .shared_const import (
     TOPIC_DEVICE_CONTROL,
     TOPIC_DEVICE_CONTROL_IN,
     TOPIC_DEVICE_EVENT,
+    TOPIC_DEVICE_EVENT_SUB,
     TOPIC_DEVICE_HEARTBEAT,
 )
 
@@ -123,6 +124,11 @@ class PetlibroDeviceBase(ABC):
     def event_topic(self) -> str:
         """Topic for receiving events."""
         return self._get_topic(TOPIC_DEVICE_EVENT)
+
+    @property
+    def event_sub_topic(self) -> str:
+        """Topic for sending event replies."""
+        return self._get_topic(TOPIC_DEVICE_EVENT_SUB)
 
     @property
     def control_topic(self) -> str:
@@ -286,6 +292,36 @@ class PetlibroDeviceBase(ABC):
 
         except Exception as err:
             _LOGGER.exception("Error publishing command: %s", err)
+            raise
+
+    async def _publish_event_reply(self, message: Any) -> None:
+        """Publish an event response/acknowledgement on event/sub.
+
+        Args:
+            message: Message object, dict, or string to publish
+        """
+        try:
+            if hasattr(message, "to_mqtt_payload"):
+                payload = message.to_mqtt_payload()
+            elif isinstance(message, dict):
+                payload = json.dumps(message)
+            else:
+                payload = str(message)
+
+            await mqtt.async_publish(
+                self.hass,
+                self.event_sub_topic,
+                payload,
+                qos=1,
+            )
+            _LOGGER.debug(
+                "Published event reply to topic %s: %s",
+                self.event_sub_topic,
+                payload,
+            )
+
+        except Exception as err:
+            _LOGGER.exception("Error publishing event reply: %s", err)
             raise
 
     async def sync_time(self) -> None:

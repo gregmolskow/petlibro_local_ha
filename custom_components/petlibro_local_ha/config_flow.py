@@ -12,7 +12,12 @@ from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
-from .shared_const import _LOGGER, DEFAULT_SCAN_INTERVAL, DOMAIN, TZ_OFFSET
+from .shared_const import (
+    _LOGGER,
+    DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
+    utc_to_local_time,
+)
 
 # Serial number validation pattern (alphanumeric, typically 12+ characters)
 SERIAL_NUMBER_PATTERN = re.compile(r"^[A-Z0-9]{10,}$", re.IGNORECASE)
@@ -219,14 +224,19 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
                     )
                     continue
 
-                # Convert UTC time to local time
-                try:
-                    hours, minutes = map(int, utc_time_str.split(":"))
-                    local_hours = (hours + int(TZ_OFFSET)) % 24
-                    local_time_str = f"{local_hours:02d}:{minutes:02d}"
+                repeat_days = plan.get("repeatDay") or [1, 2, 3, 4, 5, 6, 7]
 
+                # Convert UTC time to local time and shift repeat days accordingly
+                try:
+                    local_time_str, local_days = utc_to_local_time(
+                        utc_time_str, repeat_days
+                    )
                     _LOGGER.debug(
-                        f"Converting: {utc_time_str} (UTC) -> {local_time_str} (local), offset={TZ_OFFSET}"
+                        "Converted schedule: %s (UTC, days=%s) -> %s (local, days=%s)",
+                        utc_time_str,
+                        repeat_days,
+                        local_time_str,
+                        local_days,
                     )
                 except (ValueError, AttributeError) as e:
                     _LOGGER.warning(
@@ -238,6 +248,7 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
                     "time": local_time_str,
                     "portions": grain_num,
                     "planId": plan_id,
+                    "repeatDay": local_days,
                 })
 
             # Sort schedules by time
@@ -315,6 +326,7 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
             self.feeding_schedules.append({
                 "time": user_input["time"],
                 "portions": portions,
+                "repeatDay": [1, 2, 3, 4, 5, 6, 7],
             })
             _LOGGER.debug(
                 "Added schedule: time=%s, portions=%s",
@@ -394,6 +406,9 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
                 original_plan_id = self.feeding_schedules[self.edit_index].get(
                     "planId"
                 )
+                original_repeat_day = self.feeding_schedules[
+                    self.edit_index
+                ].get("repeatDay", [1, 2, 3, 4, 5, 6, 7])
                 portions = user_input.get("portions", 1)
                 if portions is None or portions < 1:
                     portions = 1
@@ -402,6 +417,7 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
                     "time": user_input["time"],
                     "portions": portions,
                     "planId": original_plan_id,
+                    "repeatDay": original_repeat_day,
                 }
                 _LOGGER.debug(
                     "Updated schedule %s: %s",
@@ -425,7 +441,10 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
                 vol.Required(
                     "time", default=current_schedule.get("time")
                 ): selector.TimeSelector(),
-                vol.Required("portions", default=1): selector.NumberSelector(
+                vol.Required(
+                    "portions",
+                    default=current_schedule.get("portions", 1),
+                ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=1,
                         max=10,
