@@ -49,7 +49,7 @@ class PetlibroVacuumEntity(CoordinatorEntity, StateVacuumEntity):
     _attr_supported_features = (
         VacuumEntityFeature.START
         | VacuumEntityFeature.STATE
-        | VacuumEntityFeature.BATTERY
+        # | VacuumEntityFeature.BATTERY
         | VacuumEntityFeature.STATUS
         # | VacuumEntityFeature.RETURN_HOME
     )
