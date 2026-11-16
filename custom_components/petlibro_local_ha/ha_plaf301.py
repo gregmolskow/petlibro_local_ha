@@ -4,24 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.components import mqtt
 from homeassistant.core import callback
 
-from .message_data import (
-    ATTR_PUSH_EVENT,
-    ATTR_SET_SERVICE,
-    DEVICE_FEEDING_PLAN_SERVICE,
-    DEVICE_START_EVENT,
-    FEEDING_PLAN_SERVICE,
-    HEARTBEAT,
-    MANUAL_FEEDING_SERVICE,
-    NTP,
-    NTP_SYNC,
-    FoodPlan,
-)
+from .ha_petlibro_base import PetlibroDeviceBase
 from .plaf301_const import (
     ERROR_CLOGGED,
     ERROR_EMPTY,
@@ -29,14 +16,17 @@ from .plaf301_const import (
     ERROR_UNKNOWN,
     FeederState,
 )
+from .plaf301_message_data import (
+    ATTR_PUSH_EVENT,
+    ATTR_SET_SERVICE,
+    DEVICE_FEEDING_PLAN_SERVICE,
+    FEEDING_PLAN_SERVICE,
+    MANUAL_FEEDING_SERVICE,
+    FoodPlan,
+)
 from .shared_const import (
     _LOGGER,
-    MANUFACTURER,
     MODEL_PLAF301,
-    TOPIC_DEVICE_CONTROL,
-    TOPIC_DEVICE_CONTROL_IN,
-    TOPIC_DEVICE_EVENT,
-    TOPIC_DEVICE_HEARTBEAT,
 )
 
 if TYPE_CHECKING:
@@ -44,11 +34,8 @@ if TYPE_CHECKING:
     from paho.mqtt.client import MQTTMessage
 
 
-class PLAF301:
+class PLAF301(PetlibroDeviceBase):
     """MQTT-enabled Petlibro PLAF301 feeder."""
-
-    HEARTBEAT_TIMEOUT = 300
-    """The maximum allowed time (in seconds) between heartbeats before considering the device offline."""
 
     def __init__(
         self,
@@ -63,86 +50,20 @@ class PLAF301:
             serial_number: Device serial number
             name: Friendly name for the device
         """
-        self.hass = hass
-        self._sn = serial_number.upper()
-        self._name = name
-        self._model = MODEL_PLAF301
+        super().__init__(hass, serial_number, name, MODEL_PLAF301)
 
-        # State tracking
+        # Feeder-specific state tracking
         self._current_state: ATTR_PUSH_EVENT = ATTR_PUSH_EVENT()
-        self._startup_info: DEVICE_START_EVENT = DEVICE_START_EVENT()
-        self._heartbeat: HEARTBEAT = HEARTBEAT()
         self._schedule: FEEDING_PLAN_SERVICE = FEEDING_PLAN_SERVICE()
-
         self._is_dispensing = False
-        self._last_heartbeat: float = 0
-        self._last_heartbeat_time: float = time.time()
 
-        # Add door transition tracking
-        self._door_is_opening = False  # <-- ADD THIS
-        self._door_is_closing = False  # <-- ADD THIS
-        self._door_transition_timer = None  # <-- ADD THIS
+        # Door transition tracking
+        self._door_is_opening = False
+        self._door_is_closing = False
+        self._door_transition_timer = None
 
-        # MQTT unsubscribe functions
-        self._unsub_funcs: list = []
+    # ==================== Feeder-Specific Properties ====================
 
-        # Callback for state changes
-        self._state_change_callback: callable | None = None
-
-    def set_state_change_callback(self, callback: callable) -> None:
-        """Set callback to be called when state changes.
-
-        Args:
-            callback: Function to call on state change
-        """
-        self._state_change_callback = callback
-
-    @property
-    def serial_number(self) -> str:
-        """Return device serial number."""
-        return self._sn
-
-    @property
-    def name(self) -> str:
-        """Return device name."""
-        return self._name
-
-    @property
-    def model(self) -> str:
-        """Return device model."""
-        return self._model
-
-    @property
-    def manufacturer(self) -> str:
-        """Return device manufacturer."""
-        return MANUFACTURER
-
-    # MQTT Topics
-    def _get_topic(self, topic_template: str) -> str:
-        """Format topic with model and serial number."""
-        return topic_template.format(model=self._model, sn=self._sn)
-
-    @property
-    def event_topic(self) -> str:
-        """Topic for receiving events."""
-        return self._get_topic(TOPIC_DEVICE_EVENT)
-
-    @property
-    def control_topic(self) -> str:
-        """Topic for sending control commands."""
-        return self._get_topic(TOPIC_DEVICE_CONTROL)
-
-    @property
-    def control_in_topic(self) -> str:
-        """Topic for receiving control responses."""
-        return self._get_topic(TOPIC_DEVICE_CONTROL_IN)
-
-    @property
-    def heartbeat_topic(self) -> str:
-        """Topic for receiving heartbeat messages."""
-        return self._get_topic(TOPIC_DEVICE_HEARTBEAT)
-
-    # State Properties
     @property
     def is_door_open(self) -> bool:
         """Check if the barn door is open."""
@@ -172,27 +93,6 @@ class PLAF301:
     def is_empty(self) -> bool:
         """Check if grain storage is empty."""
         return not self._current_state.surplusGrain
-
-    @property
-    def is_online(self) -> bool:
-        """Check if device is online based on heartbeat."""
-        if self._last_heartbeat_time == 0:
-            return False
-
-        time_since_heartbeat = time.time() - self._last_heartbeat_time
-        return time_since_heartbeat < self.HEARTBEAT_TIMEOUT
-
-    @property
-    def last_seen(self) -> float:
-        """Return timestamp of last heartbeat."""
-        return self._last_heartbeat_time
-
-    @property
-    def seconds_since_last_heartbeat(self) -> int:
-        """Return seconds since last heartbeat."""
-        if self._last_heartbeat_time == 0:
-            return -1
-        return int(time.time() - self._last_heartbeat_time)
 
     @property
     def current_state(self) -> FeederState:
@@ -225,6 +125,8 @@ class PLAF301:
         """Get the current feeding schedule."""
         return self._schedule.to_dict()
 
+    # ==================== State Management ====================
+
     def get_state_dict(self) -> dict[str, Any]:
         """Get state as dictionary for coordinator.
 
@@ -235,8 +137,8 @@ class PLAF301:
             "state": self.current_state,
             "activity": self.current_state.to_ha_activity(),
             "is_door_open": self.is_door_open,
-            "is_door_opening": self.is_door_opening,  # <-- ADD THIS
-            "is_door_closing": self.is_door_closing,  # <-- ADD THIS
+            "is_door_opening": self.is_door_opening,
+            "is_door_closing": self.is_door_closing,
             "is_dispensing": self.is_dispensing,
             "is_empty": self.is_empty,
             "is_clogged": self.is_clogged,
@@ -247,81 +149,11 @@ class PLAF301:
             "seconds_since_heartbeat": self.seconds_since_last_heartbeat,
         }
 
-    def add_feeding_plan(
-        self,
-        id,
-        time: int,
-        amount: int,
-    ) -> None:
-        """Add a feeding plan to the device."""
-        tmp = FoodPlan(
-            grainNum=amount,
-            executionTime=time,
-            planId=id,
-        )
-        self._schedule.add_plan(tmp)
-
-    async def start(self) -> None:
-        """Start the device handler and subscribe to MQTT topics."""
-        _LOGGER.info("Starting PLAF301 device: %s", self._sn)
-
-        try:
-            # Subscribe to event topic
-            unsub = await mqtt.async_subscribe(
-                self.hass,
-                self.event_topic,
-                self._handle_event_message,
-                encoding="utf-8",
-            )
-            self._unsub_funcs.append(unsub)
-
-            # Subscribe to heartbeat topic
-            unsub = await mqtt.async_subscribe(
-                self.hass,
-                self.heartbeat_topic,
-                self._handle_heartbeat_message,
-                encoding="utf-8",
-            )
-            self._unsub_funcs.append(unsub)
-
-            # Subscribe to control response topic
-            unsub = await mqtt.async_subscribe(
-                self.hass,
-                self.control_in_topic,
-                self._handle_control_response,
-                encoding="utf-8",
-            )
-            self._unsub_funcs.append(unsub)
-
-            # Sync time with device
-            await self.sync_time()
-
-            # Request feeding schedule
-            await self.request_feeding_schedule()
-
-            _LOGGER.info("Successfully started PLAF301 device: %s", self._sn)
-
-        except Exception as err:
-            _LOGGER.exception("Failed to start PLAF301 device: %s", err)
-            raise
-
-    async def cleanup(self) -> None:
-        """Clean up resources."""
-        _LOGGER.info("Cleaning up PLAF301 device: %s", self._sn)
-
-        # Cancel door transition timer if active
-        if self._door_transition_timer:
-            self._door_transition_timer.cancel()
-            self._door_transition_timer = None
-
-        # Unsubscribe from MQTT topics
-        for unsub in self._unsub_funcs:
-            unsub()
-        self._unsub_funcs.clear()
+    # ==================== MQTT Message Handlers ====================
 
     @callback
-    def _handle_event_message(self, msg: MQTTMessage) -> None:  # noqa: PLR0912, PLR0915
-        """Handle incoming event messages.
+    def _handle_event_message(self, msg: MQTTMessage) -> None:
+        """Handle incoming event messages for feeder.
 
         Args:
             msg: MQTT message received
@@ -333,60 +165,21 @@ class PLAF301:
 
             if cmd == "ATTR_PUSH_EVENT":
                 self._current_state.from_mqtt_payload(payload)
-                _LOGGER.debug("Updated device attributes")
+                _LOGGER.debug(
+                    "Updated feeder attributes: barnDoor=%s, surplusGrain=%s, grainOutlet=%s",
+                    self._current_state.barnDoorState,
+                    self._current_state.surplusGrain,
+                    self._current_state.grainOutletState,
+                )
 
             elif cmd == "DEVICE_START_EVENT":
                 self._startup_info.from_mqtt_payload(payload)
                 _LOGGER.info(
-                    "Device started: %s", self._startup_info.softwareVersion
+                    "Feeder started: %s", self._startup_info.softwareVersion
                 )
 
             elif cmd == "WAREHOUSE_DOOR_EVENT":
-                door_state = payload.get("barnDoorState", False)
-                trigger_type = payload.get("triggerType", "")
-
-                _LOGGER.debug(
-                    "Door event: state=%s, trigger=%s, current_state=%s",
-                    door_state,
-                    trigger_type,
-                    self._current_state.barnDoorState,
-                )
-
-                # Determine if door is transitioning
-                old_state = self._current_state.barnDoorState
-                new_state = door_state
-
-                # Clear any existing transition timer
-                if self._door_transition_timer:
-                    self._door_transition_timer.cancel()
-                    self._door_transition_timer = None
-
-                if old_state != new_state:
-                    # Door state is changing
-                    if new_state:
-                        # Door is opening
-                        self._door_is_opening = True
-                        self._door_is_closing = False
-                        _LOGGER.debug("Door is opening")
-                    else:
-                        # Door is closing
-                        self._door_is_opening = False
-                        self._door_is_closing = True
-                        _LOGGER.debug("Door is closing")
-
-                    # Set a timer to clear the transition state after 5 seconds
-                    # (in case we don't get a final state update)
-                    self._door_transition_timer = self.hass.loop.call_later(
-                        5.0, self._clear_door_transition
-                    )
-                else:
-                    # Door has reached its final position
-                    self._door_is_opening = False
-                    self._door_is_closing = False
-                    _LOGGER.debug("Door reached final position")
-
-                self._current_state.barnDoorState = door_state
-                _LOGGER.debug("Door state changed: %s", door_state)
+                self._handle_door_event(payload)
 
             elif cmd == "GRAIN_OUTPUT_EVENT":
                 finished = payload.get("finished", True)
@@ -394,25 +187,70 @@ class PLAF301:
                 _LOGGER.debug("Dispensing: %s", self._is_dispensing)
 
             else:
-                _LOGGER.warning("Unknown event command: %s", cmd)
+                _LOGGER.warning("Unknown feeder event command: %s", cmd)
                 update = False
 
             # Notify callback of state change
             if self._state_change_callback and update:
-                _LOGGER.debug("Updating values from state change")
-                self.hass.async_create_task(self._state_change_callback())
-
-            else:
-                _LOGGER.warning("Unknown event command: %s", cmd)
-                update = False
-
-            # Notify callback of state change
-            if self._state_change_callback and update:
-                _LOGGER.debug("Updating values from state change")
+                _LOGGER.debug("Updating values from feeder state change")
                 self.hass.async_create_task(self._state_change_callback())
 
         except Exception as err:
-            _LOGGER.exception("Error handling event message: %s", err)
+            _LOGGER.exception("Error handling feeder event message: %s", err)
+
+    # ==================== Event Handlers ====================
+
+    def _handle_door_event(self, payload: dict) -> None:
+        """Handle warehouse door event.
+
+        Args:
+            payload: Event payload
+        """
+        door_state = payload.get("barnDoorState", False)
+        trigger_type = payload.get("triggerType", "")
+
+        _LOGGER.debug(
+            "Door event: state=%s, trigger=%s, current_state=%s",
+            door_state,
+            trigger_type,
+            self._current_state.barnDoorState,
+        )
+
+        # Determine if door is transitioning
+        old_state = self._current_state.barnDoorState
+        new_state = door_state
+
+        # Clear any existing transition timer
+        if self._door_transition_timer:
+            self._door_transition_timer.cancel()
+            self._door_transition_timer = None
+
+        if old_state != new_state:
+            # Door state is changing
+            if new_state:
+                # Door is opening
+                self._door_is_opening = True
+                self._door_is_closing = False
+                _LOGGER.debug("Door is opening")
+            else:
+                # Door is closing
+                self._door_is_opening = False
+                self._door_is_closing = True
+                _LOGGER.debug("Door is closing")
+
+            # Set a timer to clear the transition state after 5 seconds
+            # (in case we don't get a final state update)
+            self._door_transition_timer = self.hass.loop.call_later(
+                5.0, self._clear_door_transition
+            )
+        else:
+            # Door has reached its final position
+            self._door_is_opening = False
+            self._door_is_closing = False
+            _LOGGER.debug("Door reached final position")
+
+        self._current_state.barnDoorState = door_state
+        _LOGGER.debug("Door state changed: %s", door_state)
 
     def _clear_door_transition(self) -> None:
         """Clear door transition flags (called by timer)."""
@@ -425,106 +263,40 @@ class PLAF301:
         if self._state_change_callback:
             self.hass.async_create_task(self._state_change_callback())
 
-    @callback
-    def _handle_heartbeat_message(self, msg: MQTTMessage) -> None:
-        """Handle incoming heartbeat messages.
+    def _handle_device_specific_control_response(
+        self, cmd: str, payload: dict
+    ) -> bool:
+        """Handle feeder-specific control responses.
 
         Args:
-            msg: MQTT message received
+            cmd: Command name from the response
+            payload: Full response payload
+
+        Returns:
+            bool: True if response was handled
         """
-        try:
-            payload: dict = json.loads(msg.payload)
-            self._last_heartbeat = payload.get("ts")
-            self._last_heartbeat_time = time.time()
-            self._heartbeat.from_mqtt_payload(payload)
-            _LOGGER.debug(
-                "Received heartbeat(%s): RSSI=%s",
-                self._heartbeat.ts,
-                self._heartbeat.rssi,
-            )
+        if cmd == "DEVICE_FEEDING_PLAN_SERVICE":
+            self._schedule.from_mqtt_payload(payload)
+            _LOGGER.info(f"Updated feeding schedule {self._schedule.to_dict()}")
+            return True
 
-            # Trigger state update since device is online
-            if self._state_change_callback:
-                self.hass.async_create_task(self._state_change_callback())
+        return False
 
-        except Exception as err:
-            _LOGGER.exception("Error handling heartbeat message: %s", err)
+    # ==================== Lifecycle ====================
 
-    @callback
-    def _handle_control_response(self, msg: MQTTMessage) -> None:
-        """Handle incoming control response messages.
+    async def _device_specific_start(self) -> None:
+        """Perform feeder-specific initialization."""
+        # Request feeding schedule
+        await self.request_feeding_schedule()
 
-        Args:
-            msg: MQTT message received
-        """
-        try:
-            payload: dict = json.loads(msg.payload)
-            cmd = payload.get("cmd")
+    async def _device_specific_cleanup(self) -> None:
+        """Perform feeder-specific cleanup."""
+        # Cancel door transition timer if active
+        if self._door_transition_timer:
+            self._door_transition_timer.cancel()
+            self._door_transition_timer = None
 
-            _LOGGER.info("Received control response: %s", payload)
-            if cmd == "DEVICE_FEEDING_PLAN_SERVICE":
-                self._schedule.from_mqtt_payload(payload)
-                _LOGGER.info(
-                    f"Updated feeding schedule {self._schedule.to_dict()}"
-                )
-            else:
-                _LOGGER.warning("Unknown control response: %s", cmd)
-
-        except Exception as err:
-            _LOGGER.exception("Error handling control response: %s", err)
-
-    async def _publish_command(self, message: MQTTMessage) -> None:
-        """Publish a command to the device.
-
-        Args:
-            message: Message object to publish
-        """
-        try:
-            payload = message.to_mqtt_payload()
-            await mqtt.async_publish(
-                self.hass,
-                self.control_topic,
-                payload,
-                qos=1,
-            )
-            _LOGGER.debug(
-                "Published command: %s to topic %s",
-                message.cmd,
-                self.control_topic,
-            )
-
-        except Exception as err:
-            _LOGGER.exception("Error publishing command: %s", err)
-            raise
-
-    async def sync_time(self) -> None:
-        """Synchronize time with the device."""
-        _LOGGER.debug("Syncing time with device")
-        # tmp = self._current_state.ts
-        await self._publish_command(NTP_SYNC())
-        # while self._current_state.ts == tmp:
-        await asyncio.sleep(0.3)
-        #     _LOGGER.debug("NTP New TS %s, saved %s", self._schedule.ts, tmp)
-        # _LOGGER.debug("Feeding Plan update done")
-
-    async def request_feeding_schedule(self) -> None:
-        """Request the current feeding schedule from the device."""
-        _LOGGER.debug("Requesting feeding plan update")
-        tmp = self._schedule.ts
-        await self._publish_command(DEVICE_FEEDING_PLAN_SERVICE())
-        while self._schedule.ts == tmp:
-            await asyncio.sleep(0.3)
-            await self._publish_command(DEVICE_FEEDING_PLAN_SERVICE())
-        _LOGGER.debug("Feeding Plan update done")
-
-    async def request_state_update(self) -> None:
-        """Request current state from the device."""
-        _LOGGER.debug("Requesting state update")
-        tmp = self._heartbeat.ts
-        await self._publish_command(NTP())
-        while self._heartbeat.ts == tmp:
-            await asyncio.sleep(0.1)
-        _LOGGER.debug("State update done")
+    # ==================== Feeder Commands ====================
 
     async def open_door(self) -> None:
         """Open the barn door."""
@@ -534,8 +306,7 @@ class PLAF301:
         await self._publish_command(ATTR_SET_SERVICE(coverOpen=True))
 
         # Notify callback of state change
-        if self._state_change_callback:
-            await self._state_change_callback()
+        await self._notify_state_change()
 
     async def close_door(self) -> None:
         """Close the barn door."""
@@ -545,8 +316,7 @@ class PLAF301:
         await self._publish_command(ATTR_SET_SERVICE(coverOpen=False))
 
         # Notify callback of state change
-        if self._state_change_callback:
-            await self._state_change_callback()
+        await self._notify_state_change()
 
     async def toggle_door(self) -> None:
         """Toggle the barn door state."""
@@ -570,6 +340,56 @@ class PLAF301:
         msg.grainNum = amount
         await self._publish_command(msg)
 
+    # ==================== Feeding Schedule Management ====================
+
+    def add_feeding_plan(
+        self,
+        id: int,
+        time: int,
+        amount: int,
+    ) -> None:
+        """Add a feeding plan to the device.
+
+        Args:
+            id: Plan ID
+            time: Execution time
+            amount: Number of grain portions
+        """
+        tmp = FoodPlan(
+            grainNum=amount,
+            executionTime=str(time),
+            planId=id,
+        )
+        self._schedule.add_plan(tmp)
+
+    async def request_feeding_schedule(self) -> None:
+        """Request the current feeding schedule from the device."""
+        _LOGGER.debug("Requesting feeding plan update")
+        tmp = self._schedule.ts
+        await self._publish_command(DEVICE_FEEDING_PLAN_SERVICE())
+
+        max_attempts = 30  # 30 * 0.3 = 9 seconds
+        attempts = 0
+
+        while self._schedule.ts == tmp and attempts < max_attempts:
+            await asyncio.sleep(0.3)
+            attempts += 1
+
+            # Retry command every 3 seconds
+            if attempts % 10 == 0:
+                _LOGGER.debug(
+                    "Retrying feeding schedule request (attempt %d)",
+                    attempts // 10,
+                )
+                await self._publish_command(DEVICE_FEEDING_PLAN_SERVICE())
+
+        if attempts >= max_attempts:
+            _LOGGER.warning("Timeout waiting for feeding schedule update")
+        else:
+            _LOGGER.debug(
+                "Feeding schedule updated after %d attempts", attempts
+            )
+
     async def update_feeding_plan_service(
         self, feeding_plan: FEEDING_PLAN_SERVICE
     ) -> None:
@@ -588,10 +408,6 @@ class PLAF301:
                 plan.planId = idx
             _LOGGER.debug(f"    adding plan: {plan.to_dict()}")
             self._schedule.plans.append(plan)
-        # for plan in feeding_plan.plans:
-        #     _LOGGER.debug(f"    new plan: {plan.to_dict()}")
-        #     self._schedule.update_plan(plan)
-        # _LOGGER.debug(f"Updated schedule: {self._schedule.to_dict()}")
+
         tmp = self._schedule
-        # tmp.cmd = "DEVICE_FEEDING_PLAN_SERVICE"
         await self._publish_command(tmp)

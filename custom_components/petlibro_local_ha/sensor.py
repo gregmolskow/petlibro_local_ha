@@ -23,7 +23,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Petlibro sensors from a config entry."""
-    coordinator: PetlibroCoordinator = entry.runtime_data
+    coordinator: PetlibroCoordinator = entry.runtime_data["coordinator"]
 
     async_add_entities(
         [

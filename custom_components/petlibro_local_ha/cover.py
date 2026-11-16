@@ -22,7 +22,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Petlibro cover from a config entry."""
-    coordinator: PetlibroCoordinator = entry.runtime_data
+    coordinator: PetlibroCoordinator = entry.runtime_data["coordinator"]
 
     async_add_entities(
         [PLAF301CoverEntity(coordinator, entry)],
@@ -48,7 +48,7 @@ class PLAF301CoverEntity(CoordinatorEntity, CoverEntity):
         """Initialize the cover entity."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.data['petlibro_serial_number']}_cover"
-        self._feeder = coordinator.feeder
+        self._feeder = coordinator.device
 
     @property
     def device_info(self) -> dict[str, Any]:

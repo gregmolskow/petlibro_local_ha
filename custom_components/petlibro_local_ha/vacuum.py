@@ -34,7 +34,7 @@ async def async_setup_entry(
         entry: Config entry
         async_add_entities: Callback to add entities
     """
-    coordinator: PetlibroCoordinator = entry.runtime_data
+    coordinator: PetlibroCoordinator = entry.runtime_data["coordinator"]
 
     async_add_entities(
         [PetlibroVacuumEntity(coordinator, entry)],

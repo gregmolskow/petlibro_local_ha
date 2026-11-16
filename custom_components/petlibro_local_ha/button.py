@@ -18,7 +18,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Petlibro button from a config entry."""
-    coordinator: PetlibroCoordinator = entry.runtime_data
+    coordinator: PetlibroCoordinator = entry.runtime_data["coordinator"]
 
     async_add_entities(
         [PetlibroDispenseButton(coordinator, entry, portions=1)],
@@ -40,7 +40,7 @@ class PetlibroDispenseButton(CoordinatorEntity, ButtonEntity):
         """Initialize the button entity."""
         super().__init__(coordinator)
         self._portions = portions
-        self._feeder = coordinator.feeder
+        self._feeder = coordinator.device
 
         # Set unique ID and name based on portions
         self._attr_unique_id = (
