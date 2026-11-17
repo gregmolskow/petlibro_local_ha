@@ -6,10 +6,11 @@ from typing import Any
 
 from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .schedule_helpers import MAX_FEEDING_PLANS
 from .shared_const import DOMAIN
 
 
@@ -18,46 +19,21 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Petlibro dynamic schedule portion entities."""
+    """Set up Petlibro schedule portion entities for all possible slots."""
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     device = hass.data[DOMAIN][entry.entry_id]["device"]
 
-    tracked_plan_ids = set()
-
-    @callback
-    def async_add_dynamic_entities() -> None:
-        """Check for feeding plans and dynamically add entities."""
-        nonlocal tracked_plan_ids
-
-        # Check active device plans first, falling back to config options
-        plans = device.feeding_schedule.get("plans", [])
-        if not plans:
-            plans = entry.options.get("feeding_schedules", [])
-
-        new_entities = []
-
-        for idx, plan in enumerate(plans):
-            # Fallback index if planId is missing
-            plan_id = plan.get("planId") or (idx + 1)
-
-            if plan_id not in tracked_plan_ids:
-                tracked_plan_ids.add(plan_id)
-                new_entities.append(
-                    PetlibroSchedulePortionsEntity(coordinator, device, plan_id)
-                )
-
-        if new_entities:
-            async_add_entities(new_entities)
-
-    # Initial check on startup
-    async_add_dynamic_entities()
-
-    # Listen for coordinator updates to catch future additions/deletions
-    coordinator.async_add_listener(async_add_dynamic_entities)
+    # Pre-register entities for all possible schedule slots (1 to MAX_FEEDING_PLANS)
+    # This guarantees the platform registers successfully and entities show up immediately.
+    entities = [
+        PetlibroSchedulePortionsEntity(coordinator, device, plan_id)
+        for plan_id in range(1, MAX_FEEDING_PLANS + 1)
+    ]
+    async_add_entities(entities)
 
 
 class PetlibroSchedulePortionsEntity(CoordinatorEntity, NumberEntity):
-    """Representation of a dynamic Petlibro feeding portion slot."""
+    """Representation of a Petlibro feeding portion slot."""
 
     _attr_has_entity_name = True
     _attr_native_min_value = 1
@@ -66,7 +42,7 @@ class PetlibroSchedulePortionsEntity(CoordinatorEntity, NumberEntity):
     _attr_mode = NumberMode.BOX
     _attr_icon = "mdi:food"
 
-    def __init__(self, coordinator, device, plan_id: Any) -> None:
+    def __init__(self, coordinator, device, plan_id: int) -> None:
         """Initialize the portion entity."""
         super().__init__(coordinator)
         self._device = device
@@ -90,6 +66,11 @@ class PetlibroSchedulePortionsEntity(CoordinatorEntity, NumberEntity):
     def _get_plan(self) -> dict | None:
         """Helper to retrieve this specific plan dict by ID or index match."""
         plans = self._device.feeding_schedule.get("plans", [])
+        if not plans:
+            plans = self.coordinator.config_entry.options.get(
+                "feeding_schedules", []
+            )
+
         for idx, plan in enumerate(plans):
             p_id = plan.get("planId") or (idx + 1)
             if p_id == self._plan_id:
@@ -98,7 +79,7 @@ class PetlibroSchedulePortionsEntity(CoordinatorEntity, NumberEntity):
 
     @property
     def available(self) -> bool:
-        """Return if entity is available."""
+        """Return if entity is available (only if the plan slot is currently populated)."""
         return super().available and self._get_plan() is not None
 
     @property
@@ -107,7 +88,7 @@ class PetlibroSchedulePortionsEntity(CoordinatorEntity, NumberEntity):
         plan = self._get_plan()
         if plan:
             return float(plan.get("grainNum", plan.get("portions", 1)))
-        return None
+        return 1.0
 
     async def async_set_native_value(self, value: float) -> None:
         """Update portions for this specific plan and push changes via MQTT."""
@@ -119,7 +100,7 @@ class PetlibroSchedulePortionsEntity(CoordinatorEntity, NumberEntity):
             p_id = plan.get("planId") or (idx + 1)
             if p_id == self._plan_id:
                 plan["grainNum"] = int_value
-                plan["planId"] = p_id  # Ensure planId is stamped
+                plan["planId"] = p_id
                 found = True
                 break
 
