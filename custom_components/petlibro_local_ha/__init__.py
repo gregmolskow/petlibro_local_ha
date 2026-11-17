@@ -17,14 +17,16 @@ from .coordinator import PetlibroCoordinator
 from .ha_plaf301 import FEEDING_PLAN_SERVICE, PLAF301, FoodPlan
 from .ha_plwf116 import PLWF116
 from .schedule_helpers import (
-    MAX_FEEDING_PLANS,
+    MAX_FEEDING_PLANS as MAX_FEEDING_PLANS,
+)
+from .schedule_helpers import (
     ScheduleValidationError,
     check_duplicate_schedule,
     check_max_schedules,
-    validate_schedule_list,
-    validate_time_string,
     validate_portions,
     validate_repeat_days,
+    validate_schedule_list,
+    validate_time_string,
 )
 from .shared_const import (
     _LOGGER,
@@ -38,12 +40,15 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, ServiceCall
 
 
-# Platform mapping by device type
+# Platform mapping by device type (Updated to include number and time platforms for feeders)
 FEEDER_PLATFORMS: list[Platform] = [
     Platform.VACUUM,
     Platform.SENSOR,
     Platform.COVER,
     Platform.BUTTON,
+    Platform.SWITCH,
+    Platform.NUMBER,
+    Platform.TIME,
 ]
 
 FOUNTAIN_PLATFORMS: list[Platform] = [
@@ -272,7 +277,7 @@ async def _push_schedules_to_device(
     await coordinator.async_request_refresh()
 
 
-def _register_services(hass: HomeAssistant) -> None:  # noqa: C901
+def _register_services(hass: HomeAssistant) -> None:
     """Register all petlibro_local_ha services."""
 
     # ── set_feeding_schedule ──────────────────────────────────────────
@@ -295,9 +300,7 @@ def _register_services(hass: HomeAssistant) -> None:  # noqa: C901
             len(validated),
             device_id,
         )
-        await _push_schedules_to_device(
-            hass, feeder, config_entry, validated
-        )
+        await _push_schedules_to_device(hass, feeder, config_entry, validated)
 
     hass.services.async_register(
         DOMAIN,
@@ -333,9 +336,11 @@ def _register_services(hass: HomeAssistant) -> None:  # noqa: C901
         if dup_err:
             raise vol.Invalid(dup_err)
 
-        current.append(
-            {"time": time_str, "portions": portions, "repeatDay": days}
-        )
+        current.append({
+            "time": time_str,
+            "portions": portions,
+            "repeatDay": days,
+        })
 
         _LOGGER.info(
             "Service add_feeding_schedule: adding %s (%d portions) to %s",
@@ -343,9 +348,7 @@ def _register_services(hass: HomeAssistant) -> None:  # noqa: C901
             portions,
             device_id,
         )
-        await _push_schedules_to_device(
-            hass, feeder, config_entry, current
-        )
+        await _push_schedules_to_device(hass, feeder, config_entry, current)
 
     hass.services.async_register(
         DOMAIN,
@@ -382,9 +385,7 @@ def _register_services(hass: HomeAssistant) -> None:  # noqa: C901
             remove_time,
             device_id,
         )
-        await _push_schedules_to_device(
-            hass, feeder, config_entry, updated
-        )
+        await _push_schedules_to_device(hass, feeder, config_entry, updated)
 
     hass.services.async_register(
         DOMAIN,
@@ -447,10 +448,10 @@ def _normalize_schedule_for_comparison(
     if isinstance(sched, dict):
         portions = sched.get("portions", sched.get("grainNum", 1))
         raw_days = sched.get("repeatDay") or [1, 2, 3, 4, 5, 6, 7]
-        if "executionTime" in sched and sched["executionTime"]:
+        if sched.get("executionTime"):
             utc_time = sched["executionTime"]
             repeat_days = raw_days
-        elif "time" in sched and sched["time"]:
+        elif sched.get("time"):
             try:
                 utc_time, repeat_days = local_time_to_utc(
                     sched["time"], raw_days
@@ -475,12 +476,12 @@ def _schedules_are_equal(current: list, new: list) -> bool:
     if len(current) != len(new):
         return False
 
-    current_normalized = sorted(
-        [_normalize_schedule_for_comparison(s) for s in current]
-    )
-    new_normalized = sorted(
-        [_normalize_schedule_for_comparison(s) for s in new]
-    )
+    current_normalized = sorted([
+        _normalize_schedule_for_comparison(s) for s in current
+    ])
+    new_normalized = sorted([
+        _normalize_schedule_for_comparison(s) for s in new
+    ])
 
     return current_normalized == new_normalized
 
