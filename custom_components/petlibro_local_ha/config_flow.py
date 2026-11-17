@@ -165,27 +165,28 @@ class PetlibroConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         Returns:
             Options flow handler
         """
-        return PetlibroOptionsFlowHandler(config_entry)
+        return PetlibroOptionsFlowHandler()
 
 
 class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle options for the Petlibro integration."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+    def __init__(
+        self, config_entry: config_entries.ConfigEntry | None = None
+    ) -> None:
         """Initialize options flow.
 
         Args:
-            config_entry: Config entry instance
+            config_entry: Config entry instance (optional)
         """
-        self.config_entry = config_entry
-        self.device_type = config_entry.data.get(
-            "petlibro_device_type", "feeder"
-        )
-        self.feeding_schedules = []
+        self.feeding_schedules: list[dict[str, Any]] = []
+        self.edit_index: int | None = None
+        self._schedules_loaded: bool = False
 
-        # Only load feeding schedules for feeders
-        if self.device_type == "feeder":
-            self._load_feeding_schedules()
+    @property
+    def device_type(self) -> str:
+        """Return the device type."""
+        return self.config_entry.data.get("petlibro_device_type", "feeder")
 
     def _load_feeding_schedules(self) -> None:
         """Load existing feeding schedules from the device."""
@@ -273,6 +274,11 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
         Returns:
             FlowResult: Menu with options
         """
+        if not self._schedules_loaded:
+            if self.device_type == "feeder":
+                self._load_feeding_schedules()
+            self._schedules_loaded = True
+
         # Show different menu options based on device type
         if self.device_type == "feeder":
             menu_options = ["manage_schedules", "other_settings"]
