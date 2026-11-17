@@ -8,16 +8,16 @@ from typing import Any
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import callback
-from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
 from .schedule_helpers import (
+    ScheduleValidationError,
     check_duplicate_schedule,
     check_max_schedules,
-    validate_time_string,
     validate_portions,
-    ScheduleValidationError,
+    validate_time_string,
 )
 from .shared_const import (
     _LOGGER,
@@ -67,7 +67,7 @@ class PetlibroConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle the initial step.
 
         Args:
@@ -140,7 +140,7 @@ class PetlibroConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "petlibro_device_type", default="auto"
             ): selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=DEVICE_TYPES,
+                    options=DEVICE_TYPES,  # type: ignore
                     mode=selector.SelectSelectorMode.DROPDOWN,
                 )
             ),
@@ -272,7 +272,7 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_init(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Manage the options - show menu.
 
         Args:
@@ -297,7 +297,7 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_manage_schedules(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Manage feeding schedules.
 
         Returns:
@@ -320,7 +320,7 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_add_schedule(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Add a new feeding schedule.
 
         Args:
@@ -398,7 +398,7 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_edit_schedule(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Select a schedule to edit.
 
         Args:
@@ -425,7 +425,8 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
             data_schema=vol.Schema({
                 vol.Required("schedule_to_edit"): selector.SelectSelector(
                     selector.SelectSelectorConfig(
-                        options=schedule_options, mode="dropdown"
+                        options=schedule_options,  # type: ignore
+                        mode="dropdown",  # type: ignore
                     )
                 ),
             }),
@@ -434,7 +435,7 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_edit_schedule_form(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Edit the selected schedule.
 
         Args:
@@ -445,18 +446,18 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
         """
         if user_input is not None:
             # Update the schedule
-            if 0 <= self.edit_index < len(self.feeding_schedules):
-                original_plan_id = self.feeding_schedules[self.edit_index].get(
+            if 0 <= self.edit_index < len(self.feeding_schedules):  # type: ignore
+                original_plan_id = self.feeding_schedules[self.edit_index].get(  # type: ignore
                     "planId"
                 )
                 original_repeat_day = self.feeding_schedules[
                     self.edit_index
-                ].get("repeatDay", [1, 2, 3, 4, 5, 6, 7])
+                ].get("repeatDay", [1, 2, 3, 4, 5, 6, 7])  # type: ignore
                 portions = user_input.get("portions", 1)
                 if portions is None or portions < 1:
                     portions = 1
 
-                self.feeding_schedules[self.edit_index] = {
+                self.feeding_schedules[self.edit_index] = {  # type: ignore
                     "time": user_input["time"],
                     "portions": portions,
                     "planId": original_plan_id,
@@ -465,7 +466,7 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
                 _LOGGER.debug(
                     "Updated schedule %s: %s",
                     self.edit_index,
-                    self.feeding_schedules[self.edit_index],
+                    self.feeding_schedules[self.edit_index],  # type: ignore
                 )
             self.edit_index = None
             return await self.async_step_manage_schedules()
@@ -504,7 +505,7 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_view_schedules(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """View current feeding schedules.
 
         Args:
@@ -534,7 +535,7 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_delete_schedule(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Delete a feeding schedule.
 
         Args:
@@ -564,7 +565,8 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
             data_schema=vol.Schema({
                 vol.Required("schedule_to_delete"): selector.SelectSelector(
                     selector.SelectSelectorConfig(
-                        options=schedule_options, mode="dropdown"
+                        options=schedule_options,  # type: ignore
+                        mode="dropdown",  # type: ignore
                     )
                 ),
             }),
@@ -573,7 +575,7 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_done(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Finish schedule management.
 
         Returns:
@@ -594,7 +596,7 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_other_settings(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Configure other settings like scan interval.
 
         Args:
