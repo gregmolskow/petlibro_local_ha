@@ -6,23 +6,36 @@ integration that connects to Petlibro devices via MQTT.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+import voluptuous as vol
 from homeassistant.const import Platform
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import device_registry as dr
 
 from .coordinator import PetlibroCoordinator
 from .ha_plaf301 import FEEDING_PLAN_SERVICE, PLAF301, FoodPlan
 from .ha_plwf116 import PLWF116
+from .schedule_helpers import (
+    MAX_FEEDING_PLANS,
+    ScheduleValidationError,
+    check_duplicate_schedule,
+    check_max_schedules,
+    validate_schedule_list,
+    validate_time_string,
+    validate_portions,
+    validate_repeat_days,
+)
 from .shared_const import (
     _LOGGER,
     DOMAIN,
     local_time_to_utc,
+    utc_to_local_time,
 )
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
-    from homeassistant.core import HomeAssistant
+    from homeassistant.core import HomeAssistant, ServiceCall
 
 
 # Platform mapping by device type
@@ -132,11 +145,299 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await hass.config_entries.async_forward_entry_setups(entry, platforms)
 
         _LOGGER.info("Successfully set up Petlibro device: %s (%s)", name, sn)
+
+        # Register domain-level services (only once, on the first entry)
+        if not hass.services.has_service(DOMAIN, "set_feeding_schedule"):
+            _register_services(hass)
+
         return True
 
     except Exception as err:
         _LOGGER.exception("Failed to set up Petlibro integration: %s", err)
         raise ConfigEntryNotReady from err
+
+
+# ==================== Service helpers ====================
+
+
+def _get_feeder_for_device_id(
+    hass: HomeAssistant, device_id: str
+) -> tuple[PLAF301, ConfigEntry]:
+    """Resolve *device_id* to a feeder instance and its config entry.
+
+    Raises:
+        vol.Invalid: If the device cannot be found or is not a feeder.
+    """
+    dev_reg = dr.async_get(hass)
+    device_entry = dev_reg.async_get(device_id)
+    if device_entry is None:
+        raise vol.Invalid(f"Device {device_id} not found")
+
+    # Walk config entries looking for a matching one
+    for entry_id in device_entry.config_entries:
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if entry is None or entry.domain != DOMAIN:
+            continue
+        runtime_data = getattr(entry, "runtime_data", None)
+        if not runtime_data:
+            continue
+        if runtime_data.get("device_type") != "feeder":
+            raise vol.Invalid(
+                "This service is only available for feeder devices"
+            )
+        return runtime_data["device"], entry
+
+    raise vol.Invalid(
+        f"No Petlibro feeder config entry found for device {device_id}"
+    )
+
+
+def _device_schedules_as_local(
+    feeder: PLAF301,
+) -> list[dict[str, Any]]:
+    """Return the feeder's current schedule list converted to local time."""
+    result: list[dict[str, Any]] = []
+    for plan in feeder.feeding_schedule.get("plans", []):
+        utc_time = plan.get("executionTime", "")
+        raw_days = plan.get("repeatDay") or [1, 2, 3, 4, 5, 6, 7]
+        portions = plan.get("grainNum", 1)
+        plan_id = plan.get("planId")
+
+        if not utc_time:
+            continue
+
+        try:
+            local_time, local_days = utc_to_local_time(utc_time, raw_days)
+        except Exception:
+            local_time = utc_time
+            local_days = raw_days
+
+        entry: dict[str, Any] = {
+            "time": local_time,
+            "portions": portions,
+            "repeatDay": local_days,
+        }
+        if plan_id is not None:
+            entry["planId"] = plan_id
+        result.append(entry)
+
+    result.sort(key=lambda s: s["time"])
+    return result
+
+
+async def _push_schedules_to_device(
+    hass: HomeAssistant,
+    feeder: PLAF301,
+    config_entry: ConfigEntry,
+    local_schedules: list[dict[str, Any]],
+) -> None:
+    """Convert *local_schedules* to UTC, push to the feeder, and update options."""
+    feeding_plan = FEEDING_PLAN_SERVICE()
+
+    for idx, schedule in enumerate(local_schedules):
+        time_str = schedule["time"]
+        portions = schedule.get("portions", 1)
+        repeat_days = schedule.get("repeatDay") or [1, 2, 3, 4, 5, 6, 7]
+
+        utc_time_str, shifted_days = local_time_to_utc(time_str, repeat_days)
+        plan_id = schedule.get("planId")
+
+        food_plan = FoodPlan(
+            grainNum=portions,
+            executionTime=utc_time_str,
+            planId=plan_id,
+            repeatDay=shifted_days,
+        )
+        feeding_plan.add_plan(food_plan)
+
+        _LOGGER.debug(
+            "Service: plan %d  local=%s  utc=%s  portions=%d  days=%s",
+            idx,
+            time_str,
+            utc_time_str,
+            portions,
+            shifted_days,
+        )
+
+    await feeder.update_feeding_plan_service(feeding_plan)
+
+    # Persist to config-entry options so the UI stays in sync
+    new_options = dict(config_entry.options)
+    new_options["feeding_schedules"] = local_schedules
+    hass.config_entries.async_update_entry(config_entry, options=new_options)
+
+    # Refresh coordinator
+    runtime = config_entry.runtime_data
+    coordinator: PetlibroCoordinator = runtime["coordinator"]
+    await coordinator.async_request_refresh()
+
+
+def _register_services(hass: HomeAssistant) -> None:  # noqa: C901
+    """Register all petlibro_local_ha services."""
+
+    # ── set_feeding_schedule ──────────────────────────────────────────
+
+    async def handle_set_feeding_schedule(call: ServiceCall) -> None:
+        """Replace the entire feeding schedule."""
+        device_id: str = call.data["device_id"]
+        raw_schedules: list[dict[str, Any]] = call.data["schedules"]
+
+        feeder, config_entry = _get_feeder_for_device_id(hass, device_id)
+
+        # Validate the full list (duplicates + max checked inside)
+        try:
+            validated = validate_schedule_list(raw_schedules)
+        except ScheduleValidationError as exc:
+            raise vol.Invalid(str(exc)) from exc
+
+        _LOGGER.info(
+            "Service set_feeding_schedule: pushing %d schedules to %s",
+            len(validated),
+            device_id,
+        )
+        await _push_schedules_to_device(
+            hass, feeder, config_entry, validated
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        "set_feeding_schedule",
+        handle_set_feeding_schedule,
+    )
+
+    # ── add_feeding_schedule ──────────────────────────────────────────
+
+    async def handle_add_feeding_schedule(call: ServiceCall) -> None:
+        """Add a single meal to the existing schedule."""
+        device_id: str = call.data["device_id"]
+
+        feeder, config_entry = _get_feeder_for_device_id(hass, device_id)
+
+        # Build new entry
+        try:
+            time_str = validate_time_string(call.data["time"])
+            portions = validate_portions(call.data.get("portions", 1))
+            days = validate_repeat_days(call.data.get("repeat_days"))
+        except ScheduleValidationError as exc:
+            raise vol.Invalid(str(exc)) from exc
+
+        # Get current schedules from device (converted to local)
+        current = _device_schedules_as_local(feeder)
+
+        # Validate limits
+        max_err = check_max_schedules(current, adding=1)
+        if max_err:
+            raise vol.Invalid(max_err)
+
+        dup_err = check_duplicate_schedule(time_str, days, current)
+        if dup_err:
+            raise vol.Invalid(dup_err)
+
+        current.append(
+            {"time": time_str, "portions": portions, "repeatDay": days}
+        )
+
+        _LOGGER.info(
+            "Service add_feeding_schedule: adding %s (%d portions) to %s",
+            time_str,
+            portions,
+            device_id,
+        )
+        await _push_schedules_to_device(
+            hass, feeder, config_entry, current
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        "add_feeding_schedule",
+        handle_add_feeding_schedule,
+    )
+
+    # ── remove_feeding_schedule ───────────────────────────────────────
+
+    async def handle_remove_feeding_schedule(call: ServiceCall) -> None:
+        """Remove meal(s) matching a given time."""
+        device_id: str = call.data["device_id"]
+        try:
+            remove_time = validate_time_string(call.data["time"])
+        except ScheduleValidationError as exc:
+            raise vol.Invalid(str(exc)) from exc
+
+        feeder, config_entry = _get_feeder_for_device_id(hass, device_id)
+        current = _device_schedules_as_local(feeder)
+
+        updated = [s for s in current if s["time"] != remove_time]
+
+        if len(updated) == len(current):
+            _LOGGER.warning(
+                "Service remove_feeding_schedule: no schedule at %s found",
+                remove_time,
+            )
+            return
+
+        removed_count = len(current) - len(updated)
+        _LOGGER.info(
+            "Service remove_feeding_schedule: removed %d schedule(s) at %s from %s",
+            removed_count,
+            remove_time,
+            device_id,
+        )
+        await _push_schedules_to_device(
+            hass, feeder, config_entry, updated
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        "remove_feeding_schedule",
+        handle_remove_feeding_schedule,
+    )
+
+    # ── sync_feeding_schedule ─────────────────────────────────────────
+
+    async def handle_sync_feeding_schedule(call: ServiceCall) -> None:
+        """Force a re-read of the schedule from the physical feeder."""
+        device_id: str = call.data["device_id"]
+
+        feeder, config_entry = _get_feeder_for_device_id(hass, device_id)
+
+        _LOGGER.info(
+            "Service sync_feeding_schedule: requesting schedule from %s",
+            device_id,
+        )
+        await feeder.request_feeding_schedule()
+
+        # Update options with what the device reports
+        local_schedules = _device_schedules_as_local(feeder)
+        new_options = dict(config_entry.options)
+        new_options["feeding_schedules"] = local_schedules
+        hass.config_entries.async_update_entry(
+            config_entry, options=new_options
+        )
+
+        # Refresh coordinator
+        runtime = config_entry.runtime_data
+        coordinator: PetlibroCoordinator = runtime["coordinator"]
+        await coordinator.async_request_refresh()
+
+    hass.services.async_register(
+        DOMAIN,
+        "sync_feeding_schedule",
+        handle_sync_feeding_schedule,
+    )
+
+    _LOGGER.debug("Registered petlibro_local_ha services")
+
+
+def _unregister_services(hass: HomeAssistant) -> None:
+    """Remove all petlibro_local_ha services."""
+    for svc in (
+        "set_feeding_schedule",
+        "add_feeding_schedule",
+        "remove_feeding_schedule",
+        "sync_feeding_schedule",
+    ):
+        hass.services.async_remove(DOMAIN, svc)
+    _LOGGER.debug("Unregistered petlibro_local_ha services")
 
 
 def _normalize_schedule_for_comparison(
@@ -307,6 +608,17 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # Clean up device
         await device.cleanup()
+
+        # Unregister services if this is the last config entry
+        remaining = [
+            e
+            for e in hass.config_entries.async_entries(DOMAIN)
+            if e.entry_id != entry.entry_id
+        ]
+        if not remaining and hass.services.has_service(
+            DOMAIN, "set_feeding_schedule"
+        ):
+            _unregister_services(hass)
 
         _LOGGER.info("Successfully unloaded Petlibro integration")
 

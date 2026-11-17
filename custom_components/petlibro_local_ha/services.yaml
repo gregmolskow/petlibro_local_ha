@@ -1,0 +1,109 @@
+set_feeding_schedule:
+  name: Set Feeding Schedule
+  description: >-
+    Replace the entire feeding schedule on the feeder with the provided list
+    of meals.  Each meal specifies a local time (HH:MM), a portion count
+    (1-10), and optionally repeat days (1=Mon … 7=Sun; omit for every day).
+    Passing an empty list removes all scheduled meals.
+  fields:
+    device_id:
+      name: Device
+      description: The Petlibro feeder device to update.
+      required: true
+      selector:
+        device:
+          integration: petlibro_local_ha
+    schedules:
+      name: Schedules
+      description: >-
+        A list of schedule objects.  Each object must have "time" (HH:MM)
+        and "portions" (1-10).  Optionally include "repeatDay" as a list
+        of day numbers (1=Mon … 7=Sun); defaults to every day.
+        Maximum 10 schedules.
+      required: true
+      example: |
+        - time: "07:30"
+          portions: 2
+        - time: "18:00"
+          portions: 3
+          repeatDay: [1, 2, 3, 4, 5]
+      selector:
+        object:
+
+add_feeding_schedule:
+  name: Add Feeding Schedule
+  description: >-
+    Add a single meal to the existing feeding schedule without replacing
+    the other meals.  Validates against duplicates and the 10-schedule
+    maximum.
+  fields:
+    device_id:
+      name: Device
+      description: The Petlibro feeder device to update.
+      required: true
+      selector:
+        device:
+          integration: petlibro_local_ha
+    time:
+      name: Time
+      description: Feeding time in HH:MM format (local time).
+      required: true
+      example: "07:30"
+      selector:
+        time:
+    portions:
+      name: Portions
+      description: Number of food portions to dispense (1-10).
+      required: false
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 10
+          mode: box
+    repeat_days:
+      name: Repeat Days
+      description: >-
+        Days of the week this meal repeats on (1=Mon … 7=Sun).
+        Leave empty for every day.
+      required: false
+      example: "[1, 2, 3, 4, 5]"
+      selector:
+        object:
+
+remove_feeding_schedule:
+  name: Remove Feeding Schedule
+  description: >-
+    Remove a meal from the feeding schedule by its time.  If multiple
+    meals share the same time, all of them are removed.
+  fields:
+    device_id:
+      name: Device
+      description: The Petlibro feeder device to update.
+      required: true
+      selector:
+        device:
+          integration: petlibro_local_ha
+    time:
+      name: Time
+      description: >-
+        Feeding time (HH:MM, local time) of the schedule to remove.
+      required: true
+      example: "07:30"
+      selector:
+        time:
+
+sync_feeding_schedule:
+  name: Sync Feeding Schedule
+  description: >-
+    Force a re-read of the feeding schedule from the physical feeder device.
+    Use this after manually changing schedules on the feeder itself, or to
+    verify the device is in sync.
+  fields:
+    device_id:
+      name: Device
+      description: The Petlibro feeder device to sync.
+      required: true
+      selector:
+        device:
+          integration: petlibro_local_ha

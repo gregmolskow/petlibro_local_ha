@@ -12,6 +12,13 @@ from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
+from .schedule_helpers import (
+    check_duplicate_schedule,
+    check_max_schedules,
+    validate_time_string,
+    validate_portions,
+    ScheduleValidationError,
+)
 from .shared_const import (
     _LOGGER,
     DEFAULT_SCAN_INTERVAL,
@@ -322,24 +329,53 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
         Returns:
             FlowResult: Form or redirect to menu
         """
+        errors: dict[str, str] = {}
+
         if user_input is not None:
             # Validate portions
-            portions = user_input.get("portions", 1)
-            if portions is None or portions < 1:
+            try:
+                portions = validate_portions(user_input.get("portions", 1))
+            except ScheduleValidationError:
                 portions = 1
 
-            # Add the new schedule
-            self.feeding_schedules.append({
-                "time": user_input["time"],
-                "portions": portions,
-                "repeatDay": [1, 2, 3, 4, 5, 6, 7],
-            })
-            _LOGGER.debug(
-                "Added schedule: time=%s, portions=%s",
-                user_input["time"],
-                portions,
-            )
-            return await self.async_step_manage_schedules()
+            time_str = user_input["time"]
+
+            # Normalise time (the HA time selector may return HH:MM:SS)
+            try:
+                time_str = validate_time_string(time_str)
+            except ScheduleValidationError:
+                errors["time"] = "invalid_time"
+
+            if not errors:
+                # Check max schedules
+                max_err = check_max_schedules(self.feeding_schedules, adding=1)
+                if max_err:
+                    errors["base"] = "too_many_schedules"
+                    _LOGGER.warning(max_err)
+
+            if not errors:
+                # Check duplicates
+                days = [1, 2, 3, 4, 5, 6, 7]
+                dup_err = check_duplicate_schedule(
+                    time_str, days, self.feeding_schedules
+                )
+                if dup_err:
+                    errors["time"] = "duplicate_schedule"
+                    _LOGGER.warning(dup_err)
+
+            if not errors:
+                # Add the new schedule
+                self.feeding_schedules.append({
+                    "time": time_str,
+                    "portions": portions,
+                    "repeatDay": [1, 2, 3, 4, 5, 6, 7],
+                })
+                _LOGGER.debug(
+                    "Added schedule: time=%s, portions=%s",
+                    time_str,
+                    portions,
+                )
+                return await self.async_step_manage_schedules()
 
         return self.async_show_form(
             step_id="add_schedule",
@@ -353,6 +389,7 @@ class PetlibroOptionsFlowHandler(config_entries.OptionsFlow):
                     )
                 ),
             }),
+            errors=errors,
             description_placeholders={
                 "info": "Set feeding time and portion count"
             },
