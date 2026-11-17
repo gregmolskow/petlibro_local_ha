@@ -20,7 +20,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up Petlibro dynamic schedule portion entities."""
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    device = runtime_data = hass.data[DOMAIN][entry.entry_id]["device"]
+    device = hass.data[DOMAIN][entry.entry_id]["device"]
 
     tracked_plan_ids = set()
 
@@ -29,7 +29,7 @@ async def async_setup_entry(
         """Check for feeding plans and dynamically add entities."""
         nonlocal tracked_plan_ids
 
-        # Check both active device plans AND config entry options as a fallback
+        # Check active device plans first, falling back to config options
         plans = device.feeding_schedule.get("plans", [])
         if not plans:
             plans = entry.options.get("feeding_schedules", [])
@@ -37,7 +37,7 @@ async def async_setup_entry(
         new_entities = []
 
         for idx, plan in enumerate(plans):
-            # Support both 'planId' from device or fallback to index + 1
+            # Fallback index if planId is missing
             plan_id = plan.get("planId") or (idx + 1)
 
             if plan_id not in tracked_plan_ids:
@@ -59,55 +59,72 @@ async def async_setup_entry(
 class PetlibroSchedulePortionsEntity(CoordinatorEntity, NumberEntity):
     """Representation of a dynamic Petlibro feeding portion slot."""
 
+    _attr_has_entity_name = True
+    _attr_native_min_value = 1
+    _attr_native_max_value = 10
+    _attr_native_step = 1
+    _attr_mode = NumberMode.BOX
+    _attr_icon = "mdi:food"
+
     def __init__(self, coordinator, device, plan_id: Any) -> None:
         """Initialize the portion entity."""
         super().__init__(coordinator)
         self._device = device
         self._plan_id = plan_id
 
-        self._attr_name = f"{device.name} Schedule {plan_id} Portions"
+        self._attr_name = f"Schedule {plan_id} Portions"
         self._attr_unique_id = (
             f"{device.serial_number}_schedule_{plan_id}_portions"
         )
-        self._attr_native_min_value = 1
-        self._attr_native_max_value = 10
-        self._attr_native_step = 1
-        self._attr_mode = NumberMode.BOX
-        self._attr_icon = "mdi:food"
+
+    @property
+    def device_info(self) -> dict[str, Any]:
+        """Link entity to the main Petlibro device entry."""
+        return {
+            "identifiers": {(DOMAIN, self._device.serial_number)},
+            "name": self._device.name,
+            "manufacturer": getattr(self._device, "manufacturer", "Petlibro"),
+            "model": getattr(self._device, "model", "PLAF301"),
+        }
 
     def _get_plan(self) -> dict | None:
-        """Helper to retrieve this specific plan dict from device schedule."""
+        """Helper to retrieve this specific plan dict by ID or index match."""
         plans = self._device.feeding_schedule.get("plans", [])
-        for plan in plans:
-            if (
-                plan.get("planId") == self._plan_id
-                or plan.get("planId") is None
-            ):
+        for idx, plan in enumerate(plans):
+            p_id = plan.get("planId") or (idx + 1)
+            if p_id == self._plan_id:
                 return plan
         return None
 
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return super().available
+        return super().available and self._get_plan() is not None
 
     @property
     def native_value(self) -> float | None:
         """Return the current portion count."""
         plan = self._get_plan()
         if plan:
-            return plan.get("grainNum", plan.get("portions", 1))
-        return 1
+            return float(plan.get("grainNum", plan.get("portions", 1)))
+        return None
 
     async def async_set_native_value(self, value: float) -> None:
         """Update portions for this specific plan and push changes via MQTT."""
         int_value = int(value)
         plans = self._device.feeding_schedule.get("plans", [])
 
-        for plan in plans:
-            if plan.get("planId") == self._plan_id:
+        found = False
+        for idx, plan in enumerate(plans):
+            p_id = plan.get("planId") or (idx + 1)
+            if p_id == self._plan_id:
                 plan["grainNum"] = int_value
+                plan["planId"] = p_id  # Ensure planId is stamped
+                found = True
                 break
+
+        if not found:
+            return
 
         # Rebuild and push to physical feeder
         self._device._schedule.plans = []
