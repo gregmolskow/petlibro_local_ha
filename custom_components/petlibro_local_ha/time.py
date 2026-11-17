@@ -29,12 +29,19 @@ async def async_setup_entry(
     def async_add_dynamic_entities() -> None:
         """Check for feeding plans and dynamically add time entities."""
         nonlocal tracked_plan_ids
+
+        # Check active device plans first, with config entry options as startup fallback
         plans = device.feeding_schedule.get("plans", [])
+        if not plans:
+            plans = entry.options.get("feeding_schedules", [])
+
         new_entities = []
 
-        for plan in plans:
-            plan_id = plan.get("planId")
-            if plan_id and plan_id not in tracked_plan_ids:
+        for idx, plan in enumerate(plans):
+            # Support planId from device or fallback to index + 1
+            plan_id = plan.get("planId") or (idx + 1)
+
+            if plan_id not in tracked_plan_ids:
                 tracked_plan_ids.add(plan_id)
                 new_entities.append(
                     PetlibroScheduleTimeEntity(coordinator, device, plan_id)
@@ -43,7 +50,10 @@ async def async_setup_entry(
         if new_entities:
             async_add_entities(new_entities)
 
+    # Initial check on startup
     async_add_dynamic_entities()
+
+    # Listen for coordinator updates to catch future schedule additions/deletions
     coordinator.async_add_listener(async_add_dynamic_entities)
 
 
@@ -56,28 +66,41 @@ class PetlibroScheduleTimeEntity(CoordinatorEntity, TimeEntity):
         self._device = device
         self._plan_id = plan_id
 
-        self._attr_name = f"{device.name} Schedule {plan_id} Time"
-        self._attr_unique_id = f"{device._sn}_schedule_{plan_id}_time"
+        self._attr_name = f"Schedule {plan_id} Time"
+        self._attr_unique_id = f"{device.serial_number}_schedule_{plan_id}_time"
         self._attr_icon = "mdi:clock-outline"
+
+    @property
+    def device_info(self) -> dict[str, Any]:
+        """Link to the same physical device."""
+        return {
+            "identifiers": {(DOMAIN, self._device.serial_number)},
+            "name": self._device.name,
+            "manufacturer": self._device.manufacturer,
+            "model": self._device.model,
+        }
 
     def _get_plan(self) -> dict | None:
         """Helper to retrieve this specific plan dict."""
         plans = self._device.feeding_schedule.get("plans", [])
         for plan in plans:
-            if plan.get("planId") == self._plan_id:
+            if (
+                plan.get("planId") == self._plan_id
+                or plan.get("planId") is None
+            ):
                 return plan
         return None
 
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return super().available and self._get_plan() is not None
+        return super().available
 
     @property
     def native_value(self) -> dt_time | None:
         """Return the current time for this schedule slot."""
         plan = self._get_plan()
-        if plan and (time_str := plan.get("executionTime")):
+        if plan and (time_str := plan.get("executionTime", plan.get("time"))):
             try:
                 parts = time_str.split(":")
                 return dt_time(int(parts[0]), int(parts[1]))
@@ -99,8 +122,8 @@ class PetlibroScheduleTimeEntity(CoordinatorEntity, TimeEntity):
         for plan_data in plans:
             self._device.add_feeding_plan(
                 id=plan_data.get("planId"),
-                time=plan_data.get("executionTime"),
-                amount=plan_data.get("grainNum"),
+                time=plan_data.get("executionTime", plan_data.get("time")),
+                amount=plan_data.get("grainNum", plan_data.get("portions", 1)),
                 repeat_day=plan_data.get("repeatDay", [1, 2, 3, 4, 5, 6, 7]),
             )
 

@@ -20,7 +20,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up Petlibro dynamic schedule portion entities."""
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    device = hass.data[DOMAIN][entry.entry_id]["device"]
+    device = runtime_data = hass.data[DOMAIN][entry.entry_id]["device"]
 
     tracked_plan_ids = set()
 
@@ -28,12 +28,19 @@ async def async_setup_entry(
     def async_add_dynamic_entities() -> None:
         """Check for feeding plans and dynamically add entities."""
         nonlocal tracked_plan_ids
+
+        # Check both active device plans AND config entry options as a fallback
         plans = device.feeding_schedule.get("plans", [])
+        if not plans:
+            plans = entry.options.get("feeding_schedules", [])
+
         new_entities = []
 
-        for plan in plans:
-            plan_id = plan.get("planId")
-            if plan_id and plan_id not in tracked_plan_ids:
+        for idx, plan in enumerate(plans):
+            # Support both 'planId' from device or fallback to index + 1
+            plan_id = plan.get("planId") or (idx + 1)
+
+            if plan_id not in tracked_plan_ids:
                 tracked_plan_ids.add(plan_id)
                 new_entities.append(
                     PetlibroSchedulePortionsEntity(coordinator, device, plan_id)
@@ -59,7 +66,9 @@ class PetlibroSchedulePortionsEntity(CoordinatorEntity, NumberEntity):
         self._plan_id = plan_id
 
         self._attr_name = f"{device.name} Schedule {plan_id} Portions"
-        self._attr_unique_id = f"{device._sn}_schedule_{plan_id}_portions"
+        self._attr_unique_id = (
+            f"{device.serial_number}_schedule_{plan_id}_portions"
+        )
         self._attr_native_min_value = 1
         self._attr_native_max_value = 10
         self._attr_native_step = 1
@@ -70,22 +79,25 @@ class PetlibroSchedulePortionsEntity(CoordinatorEntity, NumberEntity):
         """Helper to retrieve this specific plan dict from device schedule."""
         plans = self._device.feeding_schedule.get("plans", [])
         for plan in plans:
-            if plan.get("planId") == self._plan_id:
+            if (
+                plan.get("planId") == self._plan_id
+                or plan.get("planId") is None
+            ):
                 return plan
         return None
 
     @property
     def available(self) -> bool:
-        """Return if entity is available (plan exists)."""
-        return super().available and self._get_plan() is not None
+        """Return if entity is available."""
+        return super().available
 
     @property
     def native_value(self) -> float | None:
         """Return the current portion count."""
         plan = self._get_plan()
         if plan:
-            return plan.get("grainNum", 1)
-        return None
+            return plan.get("grainNum", plan.get("portions", 1))
+        return 1
 
     async def async_set_native_value(self, value: float) -> None:
         """Update portions for this specific plan and push changes via MQTT."""
@@ -102,8 +114,8 @@ class PetlibroSchedulePortionsEntity(CoordinatorEntity, NumberEntity):
         for plan_data in plans:
             self._device.add_feeding_plan(
                 id=plan_data.get("planId"),
-                time=plan_data.get("executionTime"),
-                amount=plan_data.get("grainNum"),
+                time=plan_data.get("executionTime", plan_data.get("time")),
+                amount=plan_data.get("grainNum", plan_data.get("portions")),
                 repeat_day=plan_data.get("repeatDay", [1, 2, 3, 4, 5, 6, 7]),
             )
 
