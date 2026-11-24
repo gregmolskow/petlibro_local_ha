@@ -8,15 +8,20 @@ from __future__ import annotations
 
 from typing import Any
 
-from .shared_const import _LOGGER
-
-# Hard limit – the device protocol replaces the entire plan list on every
+# Hard limit - the device protocol replaces the entire plan list on every
 # update, and the PLAF301 firmware has been observed to accept up to 10.
 MAX_FEEDING_PLANS = 10
 
 # Portions range accepted by the feeder hardware.
 MIN_PORTIONS = 1
 MAX_PORTIONS = 10
+
+# Time and day bounds.
+MIN_TIME_PARTS = 2
+MAX_HOUR = 23
+MAX_MINUTE = 59
+MIN_DAY = 1
+MAX_DAY = 7
 
 
 class ScheduleValidationError(Exception):
@@ -38,30 +43,27 @@ def validate_time_string(time_str: str) -> str:
         ScheduleValidationError: If the format is invalid.
     """
     if not time_str or not isinstance(time_str, str):
-        raise ScheduleValidationError(f"Invalid time value: {time_str!r}")
+        msg = f"Invalid time value: {time_str!r}"
+        raise ScheduleValidationError(msg)
 
     parts = time_str.strip().split(":")
-    if len(parts) < 2:
-        raise ScheduleValidationError(
-            f"Time must be in HH:MM format, got: {time_str!r}"
-        )
+    if len(parts) < MIN_TIME_PARTS:
+        msg = f"Time must be in HH:MM format, got: {time_str!r}"
+        raise ScheduleValidationError(msg)
 
     try:
         hours = int(parts[0])
         minutes = int(parts[1])
     except ValueError as exc:
-        raise ScheduleValidationError(
-            f"Time contains non-numeric values: {time_str!r}"
-        ) from exc
+        msg = f"Time contains non-numeric values: {time_str!r}"
+        raise ScheduleValidationError(msg) from exc
 
-    if not (0 <= hours <= 23):
-        raise ScheduleValidationError(
-            f"Hours must be 0-23, got {hours}"
-        )
-    if not (0 <= minutes <= 59):
-        raise ScheduleValidationError(
-            f"Minutes must be 0-59, got {minutes}"
-        )
+    if not (0 <= hours <= MAX_HOUR):
+        msg = f"Hours must be 0-{MAX_HOUR}, got {hours}"
+        raise ScheduleValidationError(msg)
+    if not (0 <= minutes <= MAX_MINUTE):
+        msg = f"Minutes must be 0-{MAX_MINUTE}, got {minutes}"
+        raise ScheduleValidationError(msg)
 
     return f"{hours:02d}:{minutes:02d}"
 
@@ -84,15 +86,15 @@ def validate_portions(portions: Any) -> int:
     try:
         portions_int = int(portions)
     except (ValueError, TypeError) as exc:
-        raise ScheduleValidationError(
-            f"Portions must be a number, got: {portions!r}"
-        ) from exc
+        msg = f"Portions must be a number, got: {portions!r}"
+        raise ScheduleValidationError(msg) from exc
 
     if portions_int < MIN_PORTIONS or portions_int > MAX_PORTIONS:
-        raise ScheduleValidationError(
+        msg = (
             f"Portions must be between {MIN_PORTIONS} and {MAX_PORTIONS}, "
             f"got {portions_int}"
         )
+        raise ScheduleValidationError(msg)
 
     return portions_int
 
@@ -100,7 +102,7 @@ def validate_portions(portions: Any) -> int:
 def validate_repeat_days(days: Any) -> list[int]:
     """Validate and normalise a repeat-day list.
 
-    Petlibro convention: 1 = Monday … 7 = Sunday.
+    Petlibro convention: 1 = Monday ... 7 = Sunday.
 
     Args:
         days: Raw day list, or ``None`` for every day.
@@ -115,22 +117,19 @@ def validate_repeat_days(days: Any) -> list[int]:
         return [1, 2, 3, 4, 5, 6, 7]
 
     if not isinstance(days, list):
-        raise ScheduleValidationError(
-            f"repeat_days must be a list, got {type(days).__name__}"
-        )
+        msg = f"repeat_days must be a list, got {type(days).__name__}"
+        raise ScheduleValidationError(msg)
 
     validated: list[int] = []
     for d in days:
         try:
             day_int = int(d)
         except (ValueError, TypeError) as exc:
-            raise ScheduleValidationError(
-                f"Day value must be an integer 1-7, got: {d!r}"
-            ) from exc
-        if day_int < 1 or day_int > 7:
-            raise ScheduleValidationError(
-                f"Day value must be 1 (Mon) – 7 (Sun), got {day_int}"
-            )
+            msg = f"Day value must be an integer 1-7, got: {d!r}"
+            raise ScheduleValidationError(msg) from exc
+        if day_int < MIN_DAY or day_int > MAX_DAY:
+            msg = f"Day value must be {MIN_DAY} (Mon) - {MAX_DAY} (Sun), got {day_int}"
+            raise ScheduleValidationError(msg)
         validated.append(day_int)
 
     return sorted(set(validated))
@@ -214,7 +213,8 @@ def validate_schedule_entry(
         ScheduleValidationError: If validation fails.
     """
     if "time" not in schedule:
-        raise ScheduleValidationError("Schedule is missing 'time' field")
+        msg = "Schedule is missing 'time' field"
+        raise ScheduleValidationError(msg)
 
     time_str = validate_time_string(schedule["time"])
     portions = validate_portions(schedule.get("portions", 1))
@@ -251,9 +251,8 @@ def validate_schedule_list(
         ScheduleValidationError: On any validation failure.
     """
     if not isinstance(schedules, list):
-        raise ScheduleValidationError(
-            f"schedules must be a list, got {type(schedules).__name__}"
-        )
+        msg = f"schedules must be a list, got {type(schedules).__name__}"
+        raise ScheduleValidationError(msg)
 
     max_err = check_max_schedules([], adding=len(schedules))
     if max_err:
@@ -264,18 +263,16 @@ def validate_schedule_list(
         try:
             entry = validate_schedule_entry(raw)
         except ScheduleValidationError as exc:
-            raise ScheduleValidationError(
-                f"Schedule {idx + 1}: {exc}"
-            ) from exc
+            msg = f"Schedule {idx + 1}: {exc}"
+            raise ScheduleValidationError(msg) from exc
 
         # Check for duplicates against already-validated entries
         dup_err = check_duplicate_schedule(
             entry["time"], entry["repeatDay"], validated
         )
         if dup_err:
-            raise ScheduleValidationError(
-                f"Schedule {idx + 1}: {dup_err}"
-            )
+            msg = f"Schedule {idx + 1}: {dup_err}"
+            raise ScheduleValidationError(msg)
 
         validated.append(entry)
 
