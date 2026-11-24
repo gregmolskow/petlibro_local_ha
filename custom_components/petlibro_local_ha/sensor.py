@@ -1,6 +1,6 @@
 """Sensor platform for Petlibro integration."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -55,7 +55,6 @@ async def async_setup_entry(
 
     if device_type == "feeder":
         entities.extend([
-            PLAF301ConnectivitySensor(coordinator, entry),
             PLAF301StatusSensor(coordinator, entry),
             PLAF301NextMealSensor(coordinator, entry),
         ])
@@ -270,9 +269,7 @@ class PLAF301BatterySensor(CoordinatorEntity, SensorEntity):
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self._attr_unique_id = (
-            f"{entry.data['petlibro_serial_number']}_battery"
-        )
+        self._attr_unique_id = f"{entry.data['petlibro_serial_number']}_battery"
         self._feeder = coordinator.feeder
 
     @property
@@ -325,7 +322,7 @@ class PLAF301NextMealSensor(CoordinatorEntity, SensorEntity):
         if not plans:
             return None, None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         candidates: list[tuple[datetime, dict[str, Any]]] = []
 
         for plan in plans:
@@ -365,12 +362,10 @@ class PLAF301NextMealSensor(CoordinatorEntity, SensorEntity):
                     candidate_date.day,
                     h,
                     m,
-                    tzinfo=timezone.utc,
+                    tzinfo=UTC,
                 )
                 if candidate > now:
-                    p_dict = (
-                        plan if isinstance(plan, dict) else plan.to_dict()
-                    )
+                    p_dict = plan if isinstance(plan, dict) else plan.to_dict()
                     candidates.append((candidate, p_dict))
                     break
 
