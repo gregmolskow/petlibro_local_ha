@@ -59,11 +59,11 @@ async def async_setup_entry(
                 plan_id = display_id
                 if plan_id not in tracked_plan_ids:
                     tracked_plan_ids.add(plan_id)
-                    new_switches.append(
-                        PetlibroScheduleEnableSwitch(
-                            coordinator, device, plan_id, display_id
-                        )
+                    temp = PetlibroScheduleEnableSwitch(
+                        coordinator, device, plan_id, display_id
                     )
+                    temp.entity_registry_enabled_default = False
+                    new_switches.append(temp)
 
             if new_switches:
                 async_add_entities(new_switches)
