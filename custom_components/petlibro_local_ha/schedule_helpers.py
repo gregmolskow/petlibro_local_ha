@@ -277,3 +277,18 @@ def validate_schedule_list(
         validated.append(entry)
 
     return validated
+
+
+def get_plan_display_index(
+    device: Any, plan_id: Any, fallback: Any
+) -> int | Any:
+    """Return the 1-based index of *plan_id* in the device's schedule list.
+
+    Used only for clean GUI display names (e.g. ``Schedule 1 Time``) while
+    preserving the device's actual ``planId`` for unique IDs and MQTT sync.
+    """
+    plans = device.feeding_schedule.get("plans", [])
+    for idx, plan in enumerate(plans, start=1):
+        if plan.get("planId") == plan_id:
+            return idx
+    return fallback

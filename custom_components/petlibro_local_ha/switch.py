@@ -11,6 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .coordinator import PetlibroCoordinator
+from .schedule_helpers import get_plan_display_index
 from .shared_const import _LOGGER, DOMAIN
 
 
@@ -41,13 +42,13 @@ async def async_setup_entry(
             plans = device.feeding_schedule.get("plans", [])
             new_switches = []
 
-            for plan in plans:
+            for idx, plan in enumerate(plans, start=1):
                 plan_id = plan.get("planId")
                 if plan_id and plan_id not in tracked_plan_ids:
                     tracked_plan_ids.add(plan_id)
                     new_switches.append(
                         PetlibroScheduleEnableSwitch(
-                            coordinator, device, plan_id
+                            coordinator, device, plan_id, idx
                         )
                     )
 
@@ -136,16 +137,31 @@ class PetlibroScheduleEnableSwitch(CoordinatorEntity, SwitchEntity):
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator, device, plan_id: Any) -> None:
+    def __init__(
+        self,
+        coordinator,
+        device,
+        plan_id: Any,
+        display_id: int | None = None,
+    ) -> None:
+        """Initialize the schedule enable switch."""
         super().__init__(coordinator)
         self._device = device
         self._plan_id = plan_id
+        self._display_id = display_id if display_id is not None else plan_id
 
-        self._attr_name = f"Schedule {plan_id} Enabled"
         self._attr_unique_id = (
             f"{device.serial_number}_schedule_{plan_id}_enabled"
         )
         self._attr_icon = "mdi:calendar-check"
+
+    @property
+    def name(self) -> str:
+        """Return the display name using the 1-based schedule index."""
+        idx = get_plan_display_index(
+            self._device, self._plan_id, self._display_id
+        )
+        return f"Schedule {idx} Enabled"
 
     @property
     def device_info(self) -> dict[str, Any]:
