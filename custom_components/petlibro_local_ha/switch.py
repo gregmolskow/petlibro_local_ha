@@ -25,11 +25,12 @@ async def async_setup_entry(
     coordinator: PetlibroCoordinator = runtime_data["coordinator"]
     device = runtime_data["device"]
 
-    # 1. Add the base device switch (e.g., Pump switch)
-    entities: list[SwitchEntity] = [
-        PetlibroPumpSwitch(coordinator, entry, device)
-    ]
-    async_add_entities(entities, update_before_add=True)
+    # 1. Add pump switch for water fountain devices (PLWF116)
+    if device.serial_number.upper().startswith("WF"):
+        entities: list[SwitchEntity] = [
+            PetlibroPumpSwitch(coordinator, entry, device)
+        ]
+        async_add_entities(entities, update_before_add=True)
 
     # 2. Dynamically track and add schedule enable/disable switches (if feeder supports schedules)
     if hasattr(device, "feeding_schedule"):
