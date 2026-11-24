@@ -69,10 +69,12 @@
                 "description": "{info}",
                 "data": {
                     "time": "Feeding Time",
+                    "days": "Days of Week",
                     "portions": "Number of Portions"
                 },
                 "data_description": {
                     "time": "What time should the feeder dispense food?",
+                    "days": "Select which days this schedule should run (leave empty for every day)",
                     "portions": "How many portions should be dispensed?"
                 }
             },
@@ -80,12 +82,17 @@
                 "title": "Other Settings",
                 "description": "Configure additional settings",
                 "data": {
-                    "scan_interval": "Scan Interval (seconds)"
+                    "scan_interval": "Scan Interval (minutes)"
                 },
                 "data_description": {
                     "scan_interval": "How often to check the feeder status"
                 }
             }
+        },
+        "error": {
+            "invalid_time": "Please enter a valid time in HH:MM format.",
+            "duplicate_schedule": "A feeding schedule at this time already exists on overlapping days.",
+            "too_many_schedules": "Maximum of 10 feeding schedules allowed."
         }
     },
     "entity": {

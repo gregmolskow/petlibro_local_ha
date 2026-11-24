@@ -461,10 +461,17 @@ class PLAF301(PetlibroDeviceBase):
             f"Setting feeding plan on device from {self._schedule.to_dict()}"
         )
         self._schedule.plans = []
-        for idx, plan in enumerate(feeding_plan.plans, start=1):
-            # Ensure plan has proper ID
+        used_ids = {
+            p.planId for p in feeding_plan.plans if p.planId is not None
+        }
+        next_id = 1
+        for plan in feeding_plan.plans:
+            # Ensure plan has a unique positive ID
             if plan.planId is None:
-                plan.planId = idx
+                while next_id in used_ids:
+                    next_id += 1
+                plan.planId = next_id
+                used_ids.add(next_id)
             _LOGGER.debug(f"    adding plan: {plan.to_dict()}")
             self._schedule.plans.append(plan)
 
