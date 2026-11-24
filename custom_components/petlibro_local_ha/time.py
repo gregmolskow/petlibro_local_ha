@@ -13,7 +13,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .coordinator import PetlibroCoordinator
 from .schedule_helpers import get_plan_display_index
-from .shared_const import DOMAIN
+from .shared_const import DOMAIN, local_time_to_utc, utc_to_local_time
 
 
 async def async_setup_entry(
@@ -116,26 +116,54 @@ class PetlibroScheduleTimeEntity(CoordinatorEntity, TimeEntity):
 
     @property
     def native_value(self) -> dt_time | None:
-        """Return the current time for this schedule slot."""
+        """Return the current local time for this schedule slot."""
         plan = self._get_plan()
-        if plan and (time_str := plan.get("executionTime", plan.get("time"))):
+        if not plan:
+            return None
+
+        if utc_time := plan.get("executionTime"):
             try:
-                parts = time_str.split(":")
+                local_time, _ = utc_to_local_time(
+                    utc_time, plan.get("repeatDay")
+                )
+                parts = local_time.split(":")
                 return dt_time(int(parts[0]), int(parts[1]))
             except (ValueError, IndexError):
-                pass
+                return None
+
+        if local_time := plan.get("time"):
+            try:
+                parts = local_time.split(":")
+                return dt_time(int(parts[0]), int(parts[1]))
+            except (ValueError, IndexError):
+                return None
+
         return None
 
     async def async_set_value(self, value: dt_time) -> None:
-        """Update the execution time and push to device."""
-        time_str = value.strftime("%H:%M")
+        """Update the execution time (local UI -> UTC device) and push to device."""
+        local_time_str = value.strftime("%H:%M")
         plans = self._device.feeding_schedule.get("plans", [])
 
         found = False
         for idx, plan in enumerate(plans):
             p_id = plan.get("planId") or (idx + 1)
             if p_id == self._plan_id:
-                plan["executionTime"] = time_str
+                raw_days = plan.get("repeatDay")
+                if raw_days is None:
+                    raw_days = [1, 2, 3, 4, 5, 6, 7]
+
+                old_utc_time = plan.get("executionTime")
+                if old_utc_time and raw_days:
+                    _, local_days = utc_to_local_time(old_utc_time, raw_days)
+                else:
+                    local_days = raw_days
+
+                utc_time_str, shifted_days = local_time_to_utc(
+                    local_time_str, local_days
+                )
+                plan["executionTime"] = utc_time_str
+                plan["repeatDay"] = shifted_days
                 plan["planId"] = p_id
                 found = True
                 break
