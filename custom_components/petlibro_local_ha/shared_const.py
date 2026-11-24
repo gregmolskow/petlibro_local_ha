@@ -31,6 +31,7 @@ TZ = datetime.now().astimezone().tzinfo
 MINUTES_PER_DAY = 1440
 MINUTES_PER_HOUR = 60
 DAYS_PER_WEEK = 7
+MAXIMUM_NUMBER_OF_PLANS = 10
 
 
 def _get_tz_offset_minutes() -> int:
@@ -92,4 +93,3 @@ def utc_to_local_time(
     return _shift_time_and_days(
         utc_time_str, repeat_days, _get_tz_offset_minutes()
     )
-
