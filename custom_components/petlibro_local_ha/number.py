@@ -6,11 +6,12 @@ from typing import Any
 
 from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .schedule_helpers import MAX_FEEDING_PLANS
+from .coordinator import PetlibroCoordinator
+from .schedule_helpers import MAX_PORTIONS, MIN_PORTIONS
 from .shared_const import DOMAIN
 
 
@@ -19,30 +20,52 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Petlibro schedule portion entities for all possible slots."""
-    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    device = hass.data[DOMAIN][entry.entry_id]["device"]
+    """Set up Petlibro schedule portion entities dynamically."""
+    runtime_data = entry.runtime_data
+    coordinator: PetlibroCoordinator = runtime_data["coordinator"]
+    device = runtime_data["device"]
 
-    # Pre-register entities for all possible schedule slots (1 to MAX_FEEDING_PLANS)
-    # This guarantees the platform registers successfully and entities show up immediately.
-    entities = [
-        PetlibroSchedulePortionsEntity(coordinator, device, plan_id)
-        for plan_id in range(1, MAX_FEEDING_PLANS + 1)
-    ]
-    async_add_entities(entities)
+    if hasattr(device, "feeding_schedule"):
+        tracked_plan_ids: set[Any] = set()
+
+        @callback
+        def async_add_dynamic_numbers() -> None:
+            """Check for feeding plans and dynamically add number entities."""
+            nonlocal tracked_plan_ids
+            plans = device.feeding_schedule.get("plans", [])
+            new_entities: list[NumberEntity] = []
+
+            for plan in plans:
+                plan_id = plan.get("planId")
+                if plan_id and plan_id not in tracked_plan_ids:
+                    tracked_plan_ids.add(plan_id)
+                    new_entities.append(
+                        PetlibroSchedulePortionsEntity(
+                            coordinator, device, plan_id
+                        )
+                    )
+
+            if new_entities:
+                async_add_entities(new_entities)
+
+        # Initial population on startup
+        async_add_dynamic_numbers()
+
+        # Listen for updates to catch schedule additions/deletions
+        coordinator.async_add_listener(async_add_dynamic_numbers)
 
 
 class PetlibroSchedulePortionsEntity(CoordinatorEntity, NumberEntity):
     """Representation of a Petlibro feeding portion slot."""
 
     _attr_has_entity_name = True
-    _attr_native_min_value = 1
-    _attr_native_max_value = 10
+    _attr_native_min_value = MIN_PORTIONS
+    _attr_native_max_value = MAX_PORTIONS
     _attr_native_step = 1
     _attr_mode = NumberMode.BOX
     _attr_icon = "mdi:food"
 
-    def __init__(self, coordinator, device, plan_id: int) -> None:
+    def __init__(self, coordinator, device, plan_id: Any) -> None:
         """Initialize the portion entity."""
         super().__init__(coordinator)
         self._device = device
