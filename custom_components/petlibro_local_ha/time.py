@@ -13,7 +13,12 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .coordinator import PetlibroCoordinator
 from .schedule_helpers import get_plan_display_index
-from .shared_const import DOMAIN, local_time_to_utc, utc_to_local_time
+from .shared_const import (
+    DOMAIN,
+    MAXIMUM_NUMBER_OF_PLANS,
+    local_time_to_utc,
+    utc_to_local_time,
+)
 
 
 async def async_setup_entry(
@@ -45,6 +50,18 @@ async def async_setup_entry(
                             coordinator, device, plan_id, idx
                         )
                     )
+
+            # Add all of the place holder times
+            for idx in range(MAXIMUM_NUMBER_OF_PLANS - len(plans)):
+                display_id = len(plans) + idx + 1
+                plan_id = display_id
+                if plan_id not in tracked_plan_ids:
+                    tracked_plan_ids.add(plan_id)
+                    temp = PetlibroScheduleTimeEntity(
+                        coordinator, device, plan_id, display_id
+                    )
+                    temp.entity_registry_enabled_default = False
+                    new_entities.append(temp)
 
             if new_entities:
                 async_add_entities(new_entities)
