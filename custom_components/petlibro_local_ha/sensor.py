@@ -59,7 +59,7 @@ async def async_setup_entry(
             PLAF301NextMealSensor(coordinator, entry),
             PLAF301RSSISensor(coordinator, entry),
         ])
-    if device_type == "water_fountain":
+    if device_type == "fountain":
         entities.extend([
             PLWF116StatusSensor(coordinator, entry),
         ])
