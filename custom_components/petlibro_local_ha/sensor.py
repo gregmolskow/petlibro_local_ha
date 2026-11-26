@@ -62,6 +62,7 @@ async def async_setup_entry(
     if device_type == "fountain":
         entities.extend([
             PLWF116StatusSensor(coordinator, entry),
+            PLWF116WaterLevelSensor(coordinator, entry),
         ])
 
     async_add_entities(entities, update_before_add=True)
