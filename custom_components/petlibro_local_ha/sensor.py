@@ -566,3 +566,69 @@ class PLWF116StatusSensor(CoordinatorEntity, SensorEntity):
                 else None
             ),
         }
+
+
+class PLWF116WaterLevelSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing current device status/state."""
+
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:information-outline"
+
+    def __init__(
+        self,
+        coordinator: PetlibroCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = (
+            f"{entry.data['petlibro_serial_number']}_water_level"
+        )
+        self._attr_name = f"{entry.data['petlibro_device_name']} Water Level"
+        self._feeder = coordinator.feeder
+
+    @property
+    def native_value(self):
+        """Return the state of the sensor."""
+        return self.coordinator.data.get("water_weight_percent", 0)
+
+    @property
+    def icon(self):
+        """Return icon based on state."""
+        if not self.coordinator.data:
+            return "mdi:help-circle-outline"
+
+        status = self.native_value
+        if status > 20:
+            return "mdi:bowl"
+        return "mdi:bowl-outline"
+
+    @property
+    def extra_state_attributes(self):
+        """Return additional state attributes."""
+        if not self.coordinator.data:
+            return {}
+
+        return {
+            "online": self.coordinator.data.get("is_online", False),
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
+
+    @property
+    def device_info(self) -> dict[str, Any]:
+        """Return device information for device registry."""
+        return {
+            "identifiers": {(DOMAIN, self._feeder.serial_number)},
+            "name": self._attr_name,
+            "manufacturer": self._feeder.manufacturer,
+            "model": self._feeder.model,
+            "sw_version": (
+                self._feeder._startup_info.softwareVersion
+                if self._feeder._startup_info.softwareVersion
+                else None
+            ),
+        }
