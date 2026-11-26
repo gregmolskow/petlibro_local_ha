@@ -43,7 +43,10 @@ class ATTR_SET_SERVICE(PetlibroMessage):
     lightSwitch: bool = True
     filterNextReplacementTimestamp: int | None = None
 
-    def __init__(self, coverOpen: bool | None = None) -> None:
+    def __init__(
+        self,
+        enableLight: bool | None = None,
+    ) -> None:
         """Initialize with cover state.
 
         Args:

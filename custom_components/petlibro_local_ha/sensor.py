@@ -57,6 +57,11 @@ async def async_setup_entry(
         entities.extend([
             PLAF301StatusSensor(coordinator, entry),
             PLAF301NextMealSensor(coordinator, entry),
+            PLAF301RSSISensor(coordinator, entry),
+        ])
+    if device_type == "water_fountain":
+        entities.extend([
+            PLWF116StatusSensor(coordinator, entry),
         ])
 
     async_add_entities(entities, update_before_add=True)
@@ -231,6 +236,11 @@ class PLAF301RSSISensor(CoordinatorEntity, SensorEntity):
         self._feeder = coordinator.feeder
 
     @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
+
+    @property
     def native_value(self):
         """Return the state of the sensor."""
         if not self.coordinator.data:
@@ -271,6 +281,11 @@ class PLAF301BatterySensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.data['petlibro_serial_number']}_battery"
         self._feeder = coordinator.feeder
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
 
     @property
     def native_value(self):
@@ -315,6 +330,11 @@ class PLAF301NextMealSensor(CoordinatorEntity, SensorEntity):
             f"{entry.data['petlibro_serial_number']}_next_meal"
         )
         self._feeder = coordinator.feeder
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
 
     def _get_next_meal(self) -> tuple[datetime | None, dict[str, Any] | None]:
         """Calculate the next meal datetime and plan."""
@@ -460,6 +480,84 @@ class PLAF301NextMealSensor(CoordinatorEntity, SensorEntity):
         return {
             "identifiers": {(DOMAIN, self._feeder.serial_number)},
             "name": self._feeder.name,
+            "manufacturer": self._feeder.manufacturer,
+            "model": self._feeder.model,
+            "sw_version": (
+                self._feeder._startup_info.softwareVersion
+                if self._feeder._startup_info.softwareVersion
+                else None
+            ),
+        }
+
+
+class PLWF116StatusSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing current device status/state."""
+
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:information-outline"
+
+    def __init__(
+        self,
+        coordinator: PetlibroCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.data['petlibro_serial_number']}_status"
+        self._attr_name = f"{entry.data['petlibro_device_name']} Status"
+        self._feeder = coordinator.feeder
+
+    @property
+    def native_value(self):
+        """Return the state of the sensor."""
+        if not self.coordinator.data:
+            return "Unknown"
+
+        # Check various states in priority order
+        if not self.coordinator.data.get("is_online", False):
+            return "Offline"
+        if self.coordinator.data.get("is_low_water", False):
+            return "Empty"
+        if self.coordinator.data.get("needs_filter_replacement", False):
+            return "Replace Filter"
+        return "Idle"
+
+    @property
+    def icon(self):
+        """Return icon based on state."""
+        if not self.coordinator.data:
+            return "mdi:help-circle-outline"
+
+        status = self.native_value
+        icon_map = {
+            "Offline": "mdi:cloud-off-outline",
+            "Replace Filter": "mdi:liquid-spot",
+            "Empty": "mdi:bowl-outline",
+            "Idle": "mdi:bowl",
+        }
+        return icon_map.get(status, "mdi:information-outline")
+
+    @property
+    def extra_state_attributes(self):
+        """Return additional state attributes."""
+        if not self.coordinator.data:
+            return {}
+
+        return {
+            "online": self.coordinator.data.get("is_online", False),
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self.coordinator.last_update_success
+
+    @property
+    def device_info(self) -> dict[str, Any]:
+        """Return device information for device registry."""
+        return {
+            "identifiers": {(DOMAIN, self._feeder.serial_number)},
+            "name": self._attr_name,
             "manufacturer": self._feeder.manufacturer,
             "model": self._feeder.model,
             "sw_version": (

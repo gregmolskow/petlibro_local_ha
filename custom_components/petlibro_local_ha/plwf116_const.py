@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # Error codes
-ERROR_EMPTY = "empty"
-ERROR_CLOGGED = "clogged"
+ERROR_LOW_WATER = "low water"
+ERROR_FILTER_REPLACE = "replace filter"
 ERROR_UNKNOWN = "unknown"
 ERROR_NONE = "none"

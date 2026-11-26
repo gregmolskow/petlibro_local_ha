@@ -9,6 +9,8 @@ from homeassistant.core import callback
 
 from .ha_petlibro_base import PetlibroDeviceBase
 from .plwf116_const import (
+    ERROR_FILTER_REPLACE,
+    ERROR_LOW_WATER,
     ERROR_NONE,
 )
 from .plwf116_message_data import (
@@ -65,7 +67,7 @@ class PLWF116(PetlibroDeviceBase):
         return self._water_cap_state.weight
 
     @property
-    def is_water_detected(self) -> bool:
+    def cat_detected(self) -> bool:
         """Check if water is detected by radar sensor."""
         return self._water_cap_state.radarDetected
 
@@ -83,7 +85,7 @@ class PLWF116(PetlibroDeviceBase):
     @property
     def needs_filter_replacement(self) -> bool:
         """Check if filter needs replacement."""
-        return self._attr_state.filterLedSwitch
+        return self._attr_state.filterLedSwitch == 1
 
     @property
     def is_light_enabled(self) -> bool:
@@ -108,24 +110,22 @@ class PLWF116(PetlibroDeviceBase):
     @property
     def current_state(self) -> str:
         """Get the current state of the device."""
-        # if self.is_low_water:
-        #     return WaterFountainState.ERROR
-        # if self.needs_filter_replacement:
-        #     return WaterFountainState.WARNING
-        # if self.is_online:
-        #     return WaterFountainState.IDLE
+        if self.is_low_water:
+            return "error"
+        if self.needs_filter_replacement:
+            return "warning"
+        if self.is_online:
+            return "idle"
         # return WaterFountainState.UNKNOWN
         return "TestState"  # Placeholder until states are defined
 
     @property
     def error_code(self) -> str:
         """Get current error code."""
-        # if self.is_low_water:
-        #     return ERROR_LOW_WATER
-        # if self.needs_filter_replacement:
-        #     return ERROR_FILTER_REPLACE
-        # if self.current_state == WaterFountainState.ERROR:
-        #     return ERROR_UNKNOWN
+        if self.is_low_water:
+            return ERROR_LOW_WATER
+        if self.needs_filter_replacement:
+            return ERROR_FILTER_REPLACE
         return ERROR_NONE
 
     # ==================== State Management ====================
@@ -140,7 +140,7 @@ class PLWF116(PetlibroDeviceBase):
             "state": self.current_state,
             "water_weight_percent": self.water_weight_percent,
             "water_weight": self.water_weight,
-            "is_water_detected": self.is_water_detected,
+            "is_water_detected": self.cat_detected,
             "is_low_water": self.is_low_water,
             "needs_filter_replacement": self.needs_filter_replacement,
             "filter_next_replacement_timestamp": self.filter_next_replacement_timestamp,
