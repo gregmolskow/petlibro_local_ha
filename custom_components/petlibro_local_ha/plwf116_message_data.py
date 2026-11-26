@@ -7,11 +7,37 @@ from .message_data import PetlibroMessage
 class WATER_CAP_EVENT(PetlibroMessage):
     """Water capacity event from device."""
 
-    weightPercent: int = 0
-    weight: int = 0
     radarDetected: bool = False
     batchIndex: int = 1
     totalBatches: int = 1
+    content: list[dict] | None = None
+
+    @property
+    def weightPercent(self) -> int:
+        """Get water level as percentage (0-100)."""
+        if self.content is None:
+            return -2
+
+        recent = self.content[-1]
+        return recent.get("weightPercent", -1)
+
+    @property
+    def weight(self) -> int:
+        """Get water level in grams."""
+        if self.content is None:
+            return -2
+
+        recent = self.content[-1]
+        return recent.get("weight", -1)
+
+    @property
+    def radarDetected(self) -> bool:
+        """Get radar detection status."""
+        if self.content is None:
+            return False
+
+        recent = self.content[-1]
+        return recent.get("radarDetected", False)
 
 
 @dataclass
