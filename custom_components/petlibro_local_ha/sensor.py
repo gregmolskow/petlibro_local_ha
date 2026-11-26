@@ -591,7 +591,7 @@ class PLWF116WaterLevelSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         """Return the state of the sensor."""
-        return self.coordinator.data.get("water_weight_percent", 0)
+        return self.coordinator.data.get("water_weight_percent", -1)
 
     @property
     def icon(self):

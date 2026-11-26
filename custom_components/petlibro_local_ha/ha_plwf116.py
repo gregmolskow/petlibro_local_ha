@@ -165,6 +165,7 @@ class PLWF116(PetlibroDeviceBase):
             msg: MQTT message received
         """
         try:
+            _LOGGER.debug(f"{msg=}")
             payload: dict = json.loads(msg.payload)
             cmd = payload.get("cmd")
             update: bool = True
