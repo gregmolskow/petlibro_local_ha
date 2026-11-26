@@ -7,7 +7,6 @@ from .message_data import PetlibroMessage
 class WATER_CAP_EVENT(PetlibroMessage):
     """Water capacity event from device."""
 
-    radarDetected: bool = False
     batchIndex: int = 1
     totalBatches: int = 1
     content: list[dict] | None = None
